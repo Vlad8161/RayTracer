@@ -1,7 +1,16 @@
 cmake_minimum_required(VERSION 3.6)
 project(ray_tracing)
 
-set(CMAKE_CXX_STANDARD 11)
+find_package(OpenGL REQUIRED)
 
-set(SOURCE_FILES main.cpp)
+add_subdirectory(glfw)
+
+include_directories(glfw/include)
+
+set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2 -Wall -Wextra")
+
+set(SOURCE_FILES main.cpp ImageBitmap.h)
 add_executable(ray_tracing ${SOURCE_FILES})
+
+target_link_libraries(ray_tracing glfw ${GLFW_LIBRARIES} ${OPENGL_LIBRARY})
