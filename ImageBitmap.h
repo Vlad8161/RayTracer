@@ -37,7 +37,7 @@ public:
         }
 
         uint8_t* data = mData.get();
-        uint8_t* needPixelPtr = data + mWidth * y + x;
+        uint8_t* needPixelPtr = data + mWidth * y * 3 + x * 3;
         uint8_t r = needPixelPtr[0];
         uint8_t g = needPixelPtr[1];
         uint8_t b = needPixelPtr[2];
@@ -57,7 +57,7 @@ public:
         }
 
         uint8_t* data = mData.get();
-        uint8_t* needPixelPtr = data + mWidth * y + x;
+        uint8_t* needPixelPtr = data + mWidth * y * 3 + x * 3;
         needPixelPtr[0] = r;
         needPixelPtr[1] = g;
         needPixelPtr[2] = b;

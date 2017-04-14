@@ -7,10 +7,17 @@
 #include "Scene.h"
 #include "json.h"
 
+#define WIDTH (640)
+#define HEIGHT (480)
+
 using Json = nlohmann::json;
 
 void render(const ImageBitmap &img);
-Scene loadScene(const std::string scenePath);
+void renderScene(const Scene& scene, ImageBitmap& viewport);
+std::shared_ptr<Scene> loadScene(const std::string &scenePath);
+std::shared_ptr<std::vector<std::array<glm::vec3, 3>>> loadMesh(const std::string &filePath);
+std::ostream& operator<<(std::ostream& os, glm::mat3 x);
+std::ostream& operator<<(std::ostream& os, glm::vec3 x);
 
 int main() {
     if (!glfwInit()) {
@@ -20,14 +27,14 @@ int main() {
 
     glfwDefaultWindowHints();
 
-    GLFWwindow *mainWindow = glfwCreateWindow(300, 300, "Ray Tracing", nullptr, nullptr);
+    GLFWwindow *mainWindow = glfwCreateWindow(WIDTH, HEIGHT, "Ray Tracing", nullptr, nullptr);
     if (mainWindow == nullptr) {
         std::cerr << "Error creating window" << std::endl;
         glfwTerminate();
         return 1;
     }
 
-    loadScene("/home/vlad/projects/blender/exported_scene_hello/");
+    auto scene = loadScene("/home/vlad/projects/blender/exported_scene_hello/");
 
     glfwMakeContextCurrent(mainWindow);
     glfwSwapInterval(1);
@@ -39,7 +46,8 @@ int main() {
 
     glClearColor(1, 1, 1, 1);
 
-    ImageBitmap img(300, 300);
+    ImageBitmap img(WIDTH, HEIGHT);
+    renderScene(*scene, img);
     while (glfwWindowShouldClose(mainWindow) == GL_FALSE) {
         render(img);
         glfwSwapBuffers(mainWindow);
@@ -56,8 +64,9 @@ void render(const ImageBitmap &img) {
     glDrawPixels(img.getWidth(), img.getHeight(), GL_RGB, GL_UNSIGNED_BYTE, img.getRawData());
 }
 
-Scene loadScene(const std::string &scenePath) {
+std::shared_ptr<Scene> loadScene(const std::string &scenePath) {
     std::ifstream is(scenePath + "index");
+    std::shared_ptr<Scene> retVal(new Scene);
     Json j;
     is >> j;
 
@@ -65,19 +74,40 @@ Scene loadScene(const std::string &scenePath) {
         std::string type = i["type"];
         std::string name = i["name"];
         if (type == "MESH") {
-
+            std::string objFilePath = scenePath + name + ".obj";
+            auto translate = i["translate"];
+            auto transform = i["transform"];
+            auto mesh = loadMesh(objFilePath);
+            glm::vec3 pos(static_cast<float>(translate[0]), static_cast<float>(translate[1]), static_cast<float>(translate[2]));
+            glm::mat3 mat(
+                    static_cast<float>(transform[0][0]), static_cast<float>(transform[0][1]), static_cast<float>(transform[0][2]),
+                    static_cast<float>(transform[1][0]), static_cast<float>(transform[1][1]), static_cast<float>(transform[1][2]),
+                    static_cast<float>(transform[2][0]), static_cast<float>(transform[2][1]), static_cast<float>(transform[2][2])
+            );
+            retVal->objects.push_back(std::shared_ptr<SceneObject>(new MeshObject(mesh, pos, mat)));
+            std::cout << "mesh : pos = " << pos << " mat = " << mat << std::endl;
+        } else if (type == "CAMERA") {
+            auto translate = i["translate"];
+            auto transform = i["transform"];
+            glm::vec3 pos(static_cast<float>(translate[0]), static_cast<float>(translate[1]), static_cast<float>(translate[2]));
+            glm::mat3 mat(
+                    static_cast<float>(transform[0][0]), static_cast<float>(transform[0][1]), static_cast<float>(transform[0][2]),
+                    static_cast<float>(transform[1][0]), static_cast<float>(transform[1][1]), static_cast<float>(transform[1][2]),
+                    static_cast<float>(transform[2][0]), static_cast<float>(transform[2][1]), static_cast<float>(transform[2][2])
+            );
+            retVal->camPos = pos;
+            retVal->camMat = mat;
+            std::cout << "camera : pos = " << pos << " dir = " << mat << std::endl;
         }
-
-        std::cout << type << std::endl;
     }
 
-    return Scene();
+    return retVal;
 }
 
-std::vector<glm::vec3[3]> loadMesh(const std::string &filePath) {
+std::shared_ptr<std::vector<std::array<glm::vec3, 3>>> loadMesh(const std::string &filePath) {
     std::vector<glm::vec3> vertices;
-    std::vector<int[3]> faces;
-    std::vector<glm::vec3[3]> retVal;
+    std::vector<std::array<int, 3>> faces;
+    std::shared_ptr<std::vector<std::array<glm::vec3, 3>>> retVal(new std::vector<std::array<glm::vec3, 3>>);
 
     std::ifstream is(filePath);
 
@@ -93,7 +123,8 @@ std::vector<glm::vec3[3]> loadMesh(const std::string &filePath) {
         } else if (type == "f") {
             int v1, v2, v3;
             ss >> v1 >> v2 >> v3;
-            faces.push_back({v1, v2, v3});
+            std::array<int, 3> face = {v1, v2, v3};
+            faces.push_back(face);
         }
     }
 
@@ -101,8 +132,48 @@ std::vector<glm::vec3[3]> loadMesh(const std::string &filePath) {
         glm::vec3 v1 = vertices[i[0]];
         glm::vec3 v2 = vertices[i[1]];
         glm::vec3 v3 = vertices[i[2]];
-        retVal.push_back({v1, v2, v3});
+        std::array<glm::vec3, 3> face = {v1, v2, v3};
+        retVal->push_back(face);
     }
 
     return retVal;
+}
+
+void renderScene(const Scene& scene, ImageBitmap& viewport) {
+    auto width = viewport.getWidth();
+    auto height = viewport.getHeight();
+    float camHeight = 1.0;
+    float camWidth = static_cast<float>(width) * (camHeight / static_cast<float>(height));
+    float camDist = 1.0;
+    float dh = camHeight / static_cast<float>(height);
+    float dw = camWidth / static_cast<float>(width);
+    for (int i = 0; i < height; i++) {
+        for (int j = 0; j < width; j++) {
+            float rayX = -(camWidth / 2) + j * dw;
+            float rayY = -(camHeight / 2) + i * dh;
+            glm::vec3 rayCamDir(rayX, rayY, -camDist);
+            glm::vec3 rayWorldDir = rayCamDir * scene.camMat;
+            viewport.setPixel(j, i, 0, 0, 0);
+            for (auto& obj : scene.objects) {
+                auto intersection = obj->intersection(scene.camPos, rayWorldDir);
+                if (std::get<0>(intersection)) {
+                    viewport.setPixel(j, i, 255, 255, 255);
+                }
+            }
+        }
+    }
+}
+
+std::ostream& operator<<(std::ostream& os, glm::vec3 x) {
+    os << "{" << x[0] << " " << x[1] << " " << x[2] << "}";
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, glm::mat3 x) {
+    os << "{" << std::endl
+       << "    " << x[0][0] << " " << x[0][1] << " " << x[0][2] << std::endl
+       << "    " << x[1][0] << " " << x[1][1] << " " << x[1][2] << std::endl
+       << "    " << x[2][0] << " " << x[2][1] << " " << x[2][2] << std::endl
+       << "}";
+    return os;
 }
