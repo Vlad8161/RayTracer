@@ -13,11 +13,20 @@
 using Json = nlohmann::json;
 
 void render(const ImageBitmap &img);
-void renderScene(const Scene& scene, ImageBitmap& viewport);
+
+void renderScene(const Scene &scene, ImageBitmap &viewport);
+
 std::shared_ptr<Scene> loadScene(const std::string &scenePath);
+
 std::shared_ptr<std::vector<std::array<glm::vec3, 3>>> loadMesh(const std::string &filePath);
-std::ostream& operator<<(std::ostream& os, glm::mat3 x);
-std::ostream& operator<<(std::ostream& os, glm::vec3 x);
+
+std::ostream &operator<<(std::ostream &os, glm::mat3 x);
+
+std::ostream &operator<<(std::ostream &os, glm::vec3 x);
+
+std::array<float, 3>
+computeLight(const glm::vec3 &point, const glm::vec3 &norm, const std::vector<std::shared_ptr<SceneObject>> objects,
+             const std::vector<std::shared_ptr<Lamp>> lamps, const Material &material);
 
 int main() {
     if (!glfwInit()) {
@@ -70,7 +79,7 @@ std::shared_ptr<Scene> loadScene(const std::string &scenePath) {
     Json j;
     is >> j;
 
-    for (Json& i : j) {
+    for (Json &i : j) {
         std::string type = i["type"];
         std::string name = i["name"];
         if (type == "MESH") {
@@ -78,26 +87,40 @@ std::shared_ptr<Scene> loadScene(const std::string &scenePath) {
             auto translate = i["translate"];
             auto transform = i["transform"];
             auto mesh = loadMesh(objFilePath);
-            glm::vec3 pos(static_cast<float>(translate[0]), static_cast<float>(translate[1]), static_cast<float>(translate[2]));
+            glm::vec3 pos(static_cast<float>(translate[0]), static_cast<float>(translate[1]),
+                          static_cast<float>(translate[2]));
             glm::mat3 mat(
-                    static_cast<float>(transform[0][0]), static_cast<float>(transform[0][1]), static_cast<float>(transform[0][2]),
-                    static_cast<float>(transform[1][0]), static_cast<float>(transform[1][1]), static_cast<float>(transform[1][2]),
-                    static_cast<float>(transform[2][0]), static_cast<float>(transform[2][1]), static_cast<float>(transform[2][2])
+                    static_cast<float>(transform[0][0]), static_cast<float>(transform[0][1]),
+                    static_cast<float>(transform[0][2]),
+                    static_cast<float>(transform[1][0]), static_cast<float>(transform[1][1]),
+                    static_cast<float>(transform[1][2]),
+                    static_cast<float>(transform[2][0]), static_cast<float>(transform[2][1]),
+                    static_cast<float>(transform[2][2])
             );
-            retVal->objects.push_back(std::shared_ptr<SceneObject>(new MeshObject(mesh, pos, mat)));
+            Material material(1, 1, 1, 1);
+            retVal->objects.push_back(std::shared_ptr<SceneObject>(new MeshObject(material, mesh, pos, mat)));
             std::cout << "mesh : pos = " << pos << " mat = " << mat << std::endl;
         } else if (type == "CAMERA") {
             auto translate = i["translate"];
             auto transform = i["transform"];
-            glm::vec3 pos(static_cast<float>(translate[0]), static_cast<float>(translate[1]), static_cast<float>(translate[2]));
+            glm::vec3 pos(static_cast<float>(translate[0]), static_cast<float>(translate[1]),
+                          static_cast<float>(translate[2]));
             glm::mat3 mat(
-                    static_cast<float>(transform[0][0]), static_cast<float>(transform[0][1]), static_cast<float>(transform[0][2]),
-                    static_cast<float>(transform[1][0]), static_cast<float>(transform[1][1]), static_cast<float>(transform[1][2]),
-                    static_cast<float>(transform[2][0]), static_cast<float>(transform[2][1]), static_cast<float>(transform[2][2])
+                    static_cast<float>(transform[0][0]), static_cast<float>(transform[0][1]),
+                    static_cast<float>(transform[0][2]),
+                    static_cast<float>(transform[1][0]), static_cast<float>(transform[1][1]),
+                    static_cast<float>(transform[1][2]),
+                    static_cast<float>(transform[2][0]), static_cast<float>(transform[2][1]),
+                    static_cast<float>(transform[2][2])
             );
             retVal->camPos = pos;
             retVal->camMat = mat;
             std::cout << "camera : pos = " << pos << " dir = " << mat << std::endl;
+        } else if (type == "LAMP") {
+            auto translate = i["translate"];
+            glm::vec3 pos(static_cast<float>(translate[0]), static_cast<float>(translate[1]),
+                          static_cast<float>(translate[2]));
+            retVal->lamps.push_back(std::shared_ptr<Lamp>(new Lamp(pos, 25)));
         }
     }
 
@@ -128,7 +151,7 @@ std::shared_ptr<std::vector<std::array<glm::vec3, 3>>> loadMesh(const std::strin
         }
     }
 
-    for (auto& i : faces) {
+    for (auto &i : faces) {
         glm::vec3 v1 = vertices[i[0]];
         glm::vec3 v2 = vertices[i[1]];
         glm::vec3 v3 = vertices[i[2]];
@@ -139,7 +162,7 @@ std::shared_ptr<std::vector<std::array<glm::vec3, 3>>> loadMesh(const std::strin
     return retVal;
 }
 
-void renderScene(const Scene& scene, ImageBitmap& viewport) {
+void renderScene(const Scene &scene, ImageBitmap &viewport) {
     auto width = viewport.getWidth();
     auto height = viewport.getHeight();
     float camHeight = 1.0;
@@ -154,22 +177,68 @@ void renderScene(const Scene& scene, ImageBitmap& viewport) {
             glm::vec3 rayCamDir(rayX, rayY, -camDist);
             glm::vec3 rayWorldDir = rayCamDir * scene.camMat;
             viewport.setPixel(j, i, 0, 0, 0);
-            for (auto& obj : scene.objects) {
+            bool foundIntersection = false;
+            float foundT = 0.0;
+            std::shared_ptr<SceneObject> foundObj;
+            for (auto &obj : scene.objects) {
                 auto intersection = obj->intersection(scene.camPos, rayWorldDir);
                 if (std::get<0>(intersection)) {
-                    viewport.setPixel(j, i, 255, 255, 255);
+                    if (!foundIntersection || std::get<1>(intersection) > foundT) {
+                        foundIntersection = true;
+                        foundT = std::get<1>(intersection);
+                        foundObj = obj;
+                    }
+                }
+                if (foundIntersection) {
+                    auto ptColor = computeLight(std::get<2>(intersection).point,
+                                                glm::normalize(std::get<2>(intersection).norm),
+                                                scene.objects, scene.lamps, obj->material);
+                    uint8_t r = static_cast<uint8_t>(std::min(255.0f, std::get<0>(ptColor)));
+                    uint8_t g = static_cast<uint8_t>(std::min(255.0f, std::get<1>(ptColor)));
+                    uint8_t b = static_cast<uint8_t>(std::min(255.0f, std::get<2>(ptColor)));
+                    //std::cout << (int) r << " " << (int) g << " " << (int) b << std::endl;
+                    viewport.setPixel(j, i, r, g, b);
                 }
             }
         }
     }
 }
 
-std::ostream& operator<<(std::ostream& os, glm::vec3 x) {
+
+std::array<float, 3>
+computeLight(const glm::vec3 &point, const glm::vec3 &norm, const std::vector<std::shared_ptr<SceneObject>> objects,
+             const std::vector<std::shared_ptr<Lamp>> lamps, const Material &material) {
+    float retR = 0.0;
+    float retG = 0.0;
+    float retB = 0.0;
+    for (auto &lamp : lamps) {
+        bool inShade = false;
+        for (auto &obj : objects) {
+            if (std::get<0>(obj->intersection(point, lamp->pos - point))) {
+                inShade = true;
+            }
+        }
+        if (!inShade) {
+            std::cout << "lala" << std::endl;
+            auto toTheLight = glm::normalize(lamp->pos - point);
+            auto k = material.diffusiveIntensity * glm::dot(toTheLight, norm);
+            if (k > 0) {
+                retR += material.diffusiveColorRed * k;
+                retG += material.diffusiveColorGreen * k;
+                retB += material.diffusiveColorBlue * k;
+            }
+        }
+    }
+    return {retR, retG, retB};
+};
+
+
+std::ostream &operator<<(std::ostream &os, glm::vec3 x) {
     os << "{" << x[0] << " " << x[1] << " " << x[2] << "}";
     return os;
 }
 
-std::ostream& operator<<(std::ostream& os, glm::mat3 x) {
+std::ostream &operator<<(std::ostream &os, glm::mat3 x) {
     os << "{" << std::endl
        << "    " << x[0][0] << " " << x[0][1] << " " << x[0][2] << std::endl
        << "    " << x[1][0] << " " << x[1][1] << " " << x[1][2] << std::endl
