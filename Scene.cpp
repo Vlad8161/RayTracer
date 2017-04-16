@@ -25,9 +25,39 @@ computeHit(
 std::array<float, 3> traceRay(const Scene &scene, const glm::vec3 &rayFrom, const glm::vec3 &rayDir);
 
 
-
 std::tuple<bool, float, Hit>
 computeHit(const Triangle &triangle, const glm::vec3 &rayFrom, const glm::vec3 &rayDir) {
+#define BARYCENTRIC_HIT
+
+#ifdef BARYCENTRIC_HIT
+    auto e1 = triangle.p2 - triangle.p1;
+    auto e2 = triangle.p3 - triangle.p1;
+    auto q = rayFrom - triangle.p1;
+    auto det = glm::dot(rayDir, glm::cross(e2, e1));
+
+    if (fabsf(det) < EPS) {
+        return std::make_tuple(false, 0.0, Hit());
+    }
+
+    auto dett = glm::dot(q, glm::cross(e1, e2));
+    auto t = dett / det;
+    if (t < EPS) {
+        return std::make_tuple(false, 0.0, Hit());
+    }
+
+    auto detu = glm::dot(rayDir, glm::cross(e2, q));
+    auto detv = glm::dot(rayDir, glm::cross(q, e1));
+    auto u = detu / det;
+    auto v = detv / det;
+    if (u < 0.0 || v < 0.0 || v + u > 1.0) {
+        return std::make_tuple(false, 0.0, Hit());
+    }
+
+    auto hitPt = rayFrom + t * rayDir;
+    return std::make_tuple(true, t, Hit(hitPt, glm::cross(e1, e2)));
+#endif
+
+#ifdef SIDE_HIT
     auto norm = glm::cross(triangle.p1 - triangle.p2, triangle.p2 - triangle.p3);
     auto normRayDirDot = glm::dot(norm, rayDir);
 
@@ -40,13 +70,45 @@ computeHit(const Triangle &triangle, const glm::vec3 &rayFrom, const glm::vec3 &
         return std::make_tuple(false, 0.0, Hit());
     }
 
-    auto intersectPt = rayFrom + t * rayDir;
+    auto hitPt = rayFrom + t * rayDir;
+    auto a = triangle.p2 - triangle.p1;
+    auto b = triangle.p3 - triangle.p2;
+    auto c = triangle.p1 - triangle.p3;
+    auto ca = glm::cross(hitPt - triangle.p1, a);
+    auto cb = glm::cross(hitPt - triangle.p2, b);
+    auto cc = glm::cross(hitPt - triangle.p3, c);
+    auto dotA = glm::dot(ca, norm);
+    auto dotB = glm::dot(cb, norm);
+    auto dotC = glm::dot(cc, norm);
+    if (dotA > 0.0 && dotB > 0.0 && dotC > 0.0) {
+        return std::make_tuple(true, t, Hit(hitPt, norm));
+    } else if (dotA < 0.0 && dotB < 0.0 && dotC < 0.0) {
+        return std::make_tuple(true, t, Hit(hitPt, norm));
+    } else {
+        return std::make_tuple(false, 0.0, Hit());
+    }
+#endif
+
+#ifdef SQUARE_HIT
+    auto norm = glm::cross(triangle.p1 - triangle.p2, triangle.p2 - triangle.p3);
+    auto normRayDirDot = glm::dot(norm, rayDir);
+
+    if (fabsf(normRayDirDot) < EPS) {
+        return std::make_tuple(false, 0.0, Hit());
+    }
+
+    auto t = -(glm::dot(norm, rayFrom) - glm::dot(norm, triangle.p1)) / glm::dot(norm, rayDir);
+    if (t < EPS) {
+        return std::make_tuple(false, 0.0, Hit());
+    }
+
+    auto hitPt = rayFrom + t * rayDir;
     auto a = glm::distance(triangle.p1, triangle.p2);
     auto b = glm::distance(triangle.p2, triangle.p3);
     auto c = glm::distance(triangle.p3, triangle.p1);
-    auto aa = glm::distance(triangle.p1, intersectPt);
-    auto bb = glm::distance(triangle.p2, intersectPt);
-    auto cc = glm::distance(triangle.p3, intersectPt);
+    auto aa = glm::distance(triangle.p1, hitPt);
+    auto bb = glm::distance(triangle.p2, hitPt);
+    auto cc = glm::distance(triangle.p3, hitPt);
     auto p = (a + b + c) / 2;
     auto sqrMain = sqrtf(p * (p - a) * (p - b) * (p - c));
     p = (a + aa + bb) / 2;
@@ -58,13 +120,48 @@ computeHit(const Triangle &triangle, const glm::vec3 &rayFrom, const glm::vec3 &
     if (fabsf(sqrMain - (sqr1 + sqr2 + sqr3)) > EPS) {
         return std::make_tuple(false, 0.0, Hit());
     }
+    return std::make_tuple(true, t, Hit(hitPt, norm));
+#endif
 
-    return std::make_tuple(true, t, Hit(intersectPt, norm));
 }
 
 std::tuple<bool, float, Hit>
 computeHit(const Sphere &sphere, const glm::vec3 &rayFrom, const glm::vec3 &rayDir) {
-    return std::tuple<bool, float, Hit>(false, 0.0, Hit());
+    glm::vec3 v = rayFrom - sphere.center;
+    float a = glm::dot(rayDir, rayDir);
+    float b = 2 * glm::dot(v, rayDir);
+    float c = glm::dot(v, v) - sphere.radius * sphere.radius;
+    float d = b * b - 4 * a * c;
+    if (d < 0) {
+        return std::tuple<bool, float, Hit>(false, 0.0, Hit());
+    } else if (fabsf(d) < EPS) {
+        float t = -b / 2 * a;
+        if (t > EPS) {
+            glm::vec3 hitPt = rayFrom + t * rayDir;
+            return std::tuple<bool, float, Hit>(true, t, Hit(hitPt, hitPt - sphere.center));
+        } else {
+            return std::tuple<bool, float, Hit>(false, 0.0, Hit());
+        }
+    } else {
+        float sqrtD = sqrtf(d);
+        float t1 = -b + sqrtD / 2 * a;
+        float t2 = -b - sqrtD / 2 * a;
+        if (t1 > 0 && t2 > 0) {
+            float t = std::min(t1, t2);
+            glm::vec3 hitPt = rayFrom + t * rayDir;
+            return std::tuple<bool, float, Hit>(true, t, Hit(hitPt, hitPt - sphere.center));
+        } else if (t1 > 0) {
+            float t = t1;
+            glm::vec3 hitPt = rayFrom + t * rayDir;
+            return std::tuple<bool, float, Hit>(true, t, Hit(hitPt, hitPt - sphere.center));
+        } else if (t2 > 0) {
+            float t = t2;
+            glm::vec3 hitPt = rayFrom + t * rayDir;
+            return std::tuple<bool, float, Hit>(true, t, Hit(hitPt, hitPt - sphere.center));
+        } else {
+            return std::tuple<bool, float, Hit>(false, 0.0, Hit());
+        }
+    }
 }
 
 void loadScene(Scene &outScene, const std::string &pathToScene) {
@@ -114,6 +211,7 @@ void loadScene(Scene &outScene, const std::string &pathToScene) {
         int z = i["pos"][2];
         float intensity = i["intensity"];
         std::shared_ptr<Lamp> lamp(new Lamp(glm::vec3(x, y, z), intensity));
+        outScene.lamps.push_back(lamp);
     }
 
     auto translate = inputJson["translate"];
@@ -135,7 +233,7 @@ void loadScene(Scene &outScene, const std::string &pathToScene) {
 void renderScene(ImageBitmap &outImg, const Scene &scene) {
     auto width = outImg.getWidth();
     auto height = outImg.getHeight();
-    float camHeight = 1.0;
+    float camHeight = 0.5;
     float camWidth = static_cast<float>(width) * (camHeight / static_cast<float>(height));
     float camDist = 1.0;
     float dh = camHeight / static_cast<float>(height);
@@ -157,13 +255,23 @@ void renderScene(ImageBitmap &outImg, const Scene &scene) {
 
 std::array<float, 3> traceRay(const Scene &scene, const glm::vec3 &rayFrom, const glm::vec3 &rayDir) {
     std::tuple<bool, float, Hit> closestHit(false, 0.0, Hit());
-    std::shared_ptr<Triangle> closestTriangle;
+    std::shared_ptr<Material> closestMaterial;
+
     for (auto &obj : scene.triangles) {
         auto hit = computeHit(*obj, rayFrom, rayDir);
         if (std::get<0>(hit) && std::get<1>(hit) > 0 &&
             (!std::get<0>(closestHit) || std::get<1>(hit) < std::get<1>(closestHit))) {
             closestHit = hit;
-            closestTriangle = obj;
+            closestMaterial = obj->material;
+        }
+    }
+
+    for (auto &obj : scene.spheres) {
+        auto hit = computeHit(*obj, rayFrom, rayDir);
+        if (std::get<0>(hit) && std::get<1>(hit) > 0 &&
+            (!std::get<0>(closestHit) || std::get<1>(hit) < std::get<1>(closestHit))) {
+            closestHit = hit;
+            closestMaterial = obj->material;
         }
     }
 
@@ -178,37 +286,38 @@ std::array<float, 3> traceRay(const Scene &scene, const glm::vec3 &rayFrom, cons
     float retG = 0.0;
     float retB = 0.0;
     for (auto &lamp : scene.lamps) {
-        bool inShade = false;
+        bool shaded = false;
 
         for (auto &obj : scene.triangles) {
-            if (inShade) {
+            if (shaded) {
                 break;
             }
 
             if (std::get<0>(computeHit(*obj, hitPt, lamp->pos - hitPt))) {
-                inShade = true;
+                shaded = true;
             }
         }
 
         for (auto &obj : scene.spheres) {
-            if (inShade) {
+            if (shaded) {
                 break;
             }
 
             if (std::get<0>(computeHit(*obj, hitPt, lamp->pos - hitPt))) {
-                inShade = true;
+                shaded = true;
             }
         }
 
-        if (!inShade) {
+        if (!shaded) {
             glm::vec3 toLamp = glm::normalize(lamp->pos - hitPt);
             float dot = fabsf(glm::dot(hitNorm, toLamp));
-            float k = closestTriangle->material->diffusiveIntensity * lamp->intensity * dot;
-            retR += closestTriangle->material->diffusiveColorRed * k;
-            retG += closestTriangle->material->diffusiveColorGreen * k;
-            retB += closestTriangle->material->diffusiveColorBlue * k;
+            float k = closestMaterial->diffusiveIntensity * lamp->intensity * dot;
+            retR += closestMaterial->diffusiveColorRed * k;
+            retG += closestMaterial->diffusiveColorGreen * k;
+            retB += closestMaterial->diffusiveColorBlue * k;
         }
     }
 
-    return {retR, retG, retB};
+    std::cout << retR << " " << retG << " " << retB << std::endl;
+    return {retR * 100, retG * 100, retB * 100};
 }

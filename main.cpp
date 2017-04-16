@@ -1,4 +1,6 @@
 #include <iostream>
+#include <chrono>
+#include <algorithm>
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 #include <fstream>
@@ -44,7 +46,18 @@ int main() {
     Scene scene;
     loadScene(scene, "/home/vlad/projects/blender/hello.scene");
     ImageBitmap img(WIDTH, HEIGHT);
-    renderScene(img, scene);
+
+    std::vector<long> durations;
+    for (int i = 0; i < 10; i++) {
+        auto start = std::chrono::high_resolution_clock::now();
+        renderScene(img, scene);
+        auto end = std::chrono::high_resolution_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+        durations.push_back(duration);
+    }
+    long sum = std::accumulate(durations.begin(), durations.end(), 0);
+    std::cout << "Время выполнения: " << static_cast<double>(sum) / durations.size() << std::endl;
+
     while (glfwWindowShouldClose(mainWindow) == GL_FALSE) {
         render(img);
         glfwSwapBuffers(mainWindow);
