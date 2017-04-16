@@ -45,8 +45,8 @@ computeHit(const Triangle &triangle, const glm::vec3 &rayFrom, const glm::vec3 &
     auto b = glm::distance(triangle.p2, triangle.p3);
     auto c = glm::distance(triangle.p3, triangle.p1);
     auto aa = glm::distance(triangle.p1, intersectPt);
-    auto bb = glm::distance(triangle.p1, intersectPt);
-    auto cc = glm::distance(triangle.p1, intersectPt);
+    auto bb = glm::distance(triangle.p2, intersectPt);
+    auto cc = glm::distance(triangle.p3, intersectPt);
     auto p = (a + b + c) / 2;
     auto sqrMain = sqrtf(p * (p - a) * (p - b) * (p - c));
     p = (a + aa + bb) / 2;
