@@ -22,7 +22,7 @@ computeHit(
         const glm::vec3 &rayDir
 );
 
-std::array<float, 3> traceRay(const Scene &scene, const glm::vec3 &rayFrom, const glm::vec3 &rayDir);
+glm::vec3 traceRay(const Scene &scene, const glm::vec3 &rayFrom, const glm::vec3 &rayDir);
 
 
 std::tuple<bool, float, Hit>
@@ -169,12 +169,23 @@ void loadScene(Scene &outScene, const std::string &pathToScene) {
     Json inputJson;
     is >> inputJson;
 
+    Json world = inputJson["world"];
+    if (world != nullptr) {
+        outScene.worldAmbientColor = glm::vec3(world["ambientColor"][0], world["ambientColor"][1],
+                                               world["ambientColor"][2]);
+        outScene.worldHorizonColor = glm::vec3(world["horizonColor"][0], world["horizonColor"][1],
+                                               world["horizonColor"][2]);
+        outScene.worldAmbientFactor = world["ambientFactor"];
+    } else {
+        outScene.worldAmbientColor = glm::vec3(0.0, 0.0, 0.0);
+        outScene.worldHorizonColor = glm::vec3(150.0, 150.0, 150.0);
+        outScene.worldAmbientFactor = 0.0;
+    }
+
     for (Json &i : inputJson["materials"]) {
         std::shared_ptr<Material> material(new Material());
-        material->diffusiveIntensity = i["diffInt"];
-        material->diffusiveColorRed = i["diffRed"];
-        material->diffusiveColorGreen = i["diffGreen"];
-        material->diffusiveColorBlue = i["diffBlue"];
+        material->diffusiveIntensity = i["diffusiveFactor"];
+        material->diffusiveColor = glm::vec3(i["diffusiveColor"][0], i["diffusiveColor"][1], i["diffusiveColor"][2]);
         outScene.materials.push_back(material);
     }
 
@@ -190,7 +201,12 @@ void loadScene(Scene &outScene, const std::string &pathToScene) {
         auto p1 = vertices[i["vertices"][0]];
         auto p2 = vertices[i["vertices"][1]];
         auto p3 = vertices[i["vertices"][2]];
-        std::shared_ptr<Material> material = outScene.materials[i["material"]];
+        std::shared_ptr<Material> material;
+        if (i["material"] != nullptr) {
+            material = outScene.materials[i["material"]];
+        } else {
+            material.reset(new Material());
+        }
         std::shared_ptr<Triangle> triangle(new Triangle(p1, p2, p3, material));
         outScene.triangles.push_back(triangle);
     }
@@ -245,15 +261,15 @@ void renderScene(ImageBitmap &outImg, const Scene &scene) {
             glm::vec3 rayCamDir(rayX, rayY, -camDist);
             glm::vec3 rayWorldDir = rayCamDir * scene.camMat;
             auto traceColor = traceRay(scene, scene.camPos, rayWorldDir);
-            uint8_t r = static_cast<uint8_t>(std::min(255.0f, std::get<0>(traceColor)));
-            uint8_t g = static_cast<uint8_t>(std::min(255.0f, std::get<1>(traceColor)));
-            uint8_t b = static_cast<uint8_t>(std::min(255.0f, std::get<2>(traceColor)));
+            uint8_t r = static_cast<uint8_t>(std::min(255.0f, traceColor.x));
+            uint8_t g = static_cast<uint8_t>(std::min(255.0f, traceColor.y));
+            uint8_t b = static_cast<uint8_t>(std::min(255.0f, traceColor.z));
             outImg.setPixel(j, i, r, g, b);
         }
     }
 }
 
-std::array<float, 3> traceRay(const Scene &scene, const glm::vec3 &rayFrom, const glm::vec3 &rayDir) {
+glm::vec3 traceRay(const Scene &scene, const glm::vec3 &rayFrom, const glm::vec3 &rayDir) {
     std::tuple<bool, float, Hit> closestHit(false, 0.0, Hit());
     std::shared_ptr<Material> closestMaterial;
 
@@ -276,17 +292,22 @@ std::array<float, 3> traceRay(const Scene &scene, const glm::vec3 &rayFrom, cons
     }
 
     if (!std::get<0>(closestHit)) {
-        return {150.0, 150.0, 150.0};
+        return scene.worldHorizonColor * 255.0f;
     }
 
     glm::vec3 hitPt = std::get<2>(closestHit).point;
     glm::vec3 hitNorm = glm::normalize(std::get<2>(closestHit).norm);
 
-    float retR = 0.0;
-    float retG = 0.0;
-    float retB = 0.0;
+    glm::vec3 retColor = scene.worldAmbientColor + closestMaterial->diffusiveColor * scene.worldAmbientFactor;
     for (auto &lamp : scene.lamps) {
         bool shaded = false;
+
+        glm::vec3 toLamp = lamp->pos - hitPt;
+        float dotWithLamp = glm::dot(toLamp, hitNorm);
+        float dotWithDir = glm::dot(rayDir, hitNorm);
+        if ((dotWithDir < 0.0 && dotWithLamp < 0.0) || (dotWithDir > 0.0 && dotWithLamp > 0.0)) {
+            shaded = true;
+        }
 
         for (auto &obj : scene.triangles) {
             if (shaded) {
@@ -309,15 +330,12 @@ std::array<float, 3> traceRay(const Scene &scene, const glm::vec3 &rayFrom, cons
         }
 
         if (!shaded) {
-            glm::vec3 toLamp = glm::normalize(lamp->pos - hitPt);
+            toLamp = glm::normalize(toLamp);
             float dot = fabsf(glm::dot(hitNorm, toLamp));
             float k = closestMaterial->diffusiveIntensity * lamp->intensity * dot;
-            retR += closestMaterial->diffusiveColorRed * k;
-            retG += closestMaterial->diffusiveColorGreen * k;
-            retB += closestMaterial->diffusiveColorBlue * k;
+            retColor += closestMaterial->diffusiveColor * k;
         }
     }
 
-    std::cout << retR << " " << retG << " " << retB << std::endl;
-    return {retR * 100, retG * 100, retB * 100};
+    return retColor * 255.0f;
 }

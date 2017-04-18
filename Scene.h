@@ -25,13 +25,11 @@ typedef struct _Hit {
 
 typedef struct _Material {
     float diffusiveIntensity;
-    float diffusiveColorRed;
-    float diffusiveColorGreen;
-    float diffusiveColorBlue;
+    glm::vec3 diffusiveColor;
 
-    _Material(float diffusiveIntensity = 0.0, float diffusiveColorRed = 0.0, float diffusiveColorGreen = 0.0, float diffusiveColorBlue = 0.0)
-            : diffusiveIntensity(diffusiveIntensity), diffusiveColorRed(diffusiveColorRed),
-              diffusiveColorGreen(diffusiveColorGreen), diffusiveColorBlue(diffusiveColorBlue) {}
+    _Material(float diffusiveIntensity = 0.8, const glm::vec3 &diffusiveColor = glm::vec3(0.8, 0.8, 0.8))
+            : diffusiveIntensity(diffusiveIntensity),
+              diffusiveColor(diffusiveColor) {}
 } Material;
 
 
@@ -72,6 +70,9 @@ typedef struct _Scene {
     std::vector<std::shared_ptr<Lamp>> lamps;
     glm::vec3 camPos;
     glm::mat3 camMat;
+    glm::vec3 worldHorizonColor;
+    glm::vec3 worldAmbientColor;
+    float worldAmbientFactor;
 } Scene;
 
 

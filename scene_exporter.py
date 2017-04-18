@@ -16,6 +16,15 @@ def export_scene():
         'lamps': [],
     }
 
+    if len(bpy.data.worlds) > 0:
+        result['world'] = {
+                'ambientColor': [float(i) for i in bpy.data.worlds[0].ambient_color],
+                'ambientFactor': bpy.data.worlds[0].light_settings.ao_factor,
+                'horizonColor': [float(i) for i in bpy.data.worlds[0].horizon_color],
+        }
+    else:
+        result['world'] = None
+
     for i in bpy.data.objects:
         if i.type == 'MESH':
             bm = bmesh.new()
@@ -26,12 +35,14 @@ def export_scene():
 
             base_vertex_index = len(result['vertices'])
 
-            result['materials'].append({
-                    'diffInt': i.active_material.diffuse_intensity,
-                    'diffRed': i.active_material.diffuse_color[0],
-                    'diffGreen': i.active_material.diffuse_color[1],
-                    'diffBlue': i.active_material.diffuse_color[2],
-            })
+            if i.active_material is not None:
+                result['materials'].append({
+                        'diffusiveFactor': i.active_material.diffuse_intensity,
+                        'diffusiveColor': [float(i) for i in i.active_material.diffuse_color],
+                })
+                material_index = len(result['materials']) - 1
+            else:
+                material_index = None
 
             mat = i.matrix_world
             for j in i.data.vertices:
@@ -40,7 +51,7 @@ def export_scene():
             for j in i.data.polygons:
                 result['faces'].append({
                     'vertices': [k + base_vertex_index for k in j.vertices],
-                    'material': len(result['materials']) - 1,
+                    'material': material_index
                 })
 
         if i.type == 'CAMERA':
