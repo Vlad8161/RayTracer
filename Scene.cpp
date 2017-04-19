@@ -178,7 +178,7 @@ void loadScene(Scene &outScene, const std::string &pathToScene) {
         outScene.worldAmbientFactor = world["ambientFactor"];
     } else {
         outScene.worldAmbientColor = glm::vec3(0.0, 0.0, 0.0);
-        outScene.worldHorizonColor = glm::vec3(150.0, 150.0, 150.0);
+        outScene.worldHorizonColor = glm::vec3(0.3, 0.3, 0.3);
         outScene.worldAmbientFactor = 0.0;
     }
 
@@ -216,7 +216,12 @@ void loadScene(Scene &outScene, const std::string &pathToScene) {
         int y = i["center"][1];
         int z = i["center"][2];
         float radius = i["radius"];
-        std::shared_ptr<Material> material = outScene.materials[i["material"]];
+        std::shared_ptr<Material> material;
+        if (i["material"] != nullptr) {
+            material = outScene.materials[i["material"]];
+        } else {
+            material.reset(new Material());
+        }
         std::shared_ptr<Sphere> sphere(new Sphere(glm::vec3(x, y, z), radius, material));
         outScene.spheres.push_back(sphere);
     }

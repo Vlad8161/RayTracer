@@ -80,6 +80,25 @@ def export_scene():
                 'pos': cam_translation_vec,
                 'intensity': i.data.energy
             })
+
+        if i.type == 'META':
+            if i.active_material is not None:
+                result['materials'].append({
+                        'diffusiveFactor': i.active_material.diffuse_intensity,
+                        'diffusiveColor': [float(i) for i in i.active_material.diffuse_color],
+                })
+                material_index = len(result['materials']) - 1
+            else:
+                material_index = None
+
+            mat = i.matrix_world
+            for j in i.data.elements:
+                if j.type == 'BALL':
+                    result['spheres'].append({
+                        'center': [float(k) for k in mat * j.co],
+                        'radius': j.radius / 2,
+                        'material': material_index,
+                    })
                 
     with open(export_path, 'wt') as f:
         f.write(json.dumps(result, indent=4))
