@@ -144,17 +144,17 @@ computeHit(const Sphere &sphere, const glm::vec3 &rayFrom, const glm::vec3 &rayD
         }
     } else {
         float sqrtD = sqrtf(d);
-        float t1 = -b + sqrtD / 2 * a;
-        float t2 = -b - sqrtD / 2 * a;
-        if (t1 > 0 && t2 > 0) {
-            float t = std::min(t1, t2);
+        float t1 = (-b + sqrtD) / (2 * a);
+        float t2 = (-b - sqrtD) / (2 * a);
+        if (t1 > EPS && t2 > EPS) {
+            float t = t1 < t2 ? t1 : t2;
             glm::vec3 hitPt = rayFrom + t * rayDir;
             return std::tuple<bool, float, Hit>(true, t, Hit(hitPt, hitPt - sphere.center));
-        } else if (t1 > 0) {
+        } else if (t1 > EPS) {
             float t = t1;
             glm::vec3 hitPt = rayFrom + t * rayDir;
             return std::tuple<bool, float, Hit>(true, t, Hit(hitPt, hitPt - sphere.center));
-        } else if (t2 > 0) {
+        } else if (t2 > EPS) {
             float t = t2;
             glm::vec3 hitPt = rayFrom + t * rayDir;
             return std::tuple<bool, float, Hit>(true, t, Hit(hitPt, hitPt - sphere.center));
@@ -306,8 +306,8 @@ glm::vec3 traceRay(const Scene &scene, const glm::vec3 &rayFrom, const glm::vec3
     glm::vec3 retColor = scene.worldAmbientColor + closestMaterial->diffusiveColor * scene.worldAmbientFactor;
     for (auto &lamp : scene.lamps) {
         bool shaded = false;
-
         glm::vec3 toLamp = lamp->pos - hitPt;
+
         float dotWithLamp = glm::dot(toLamp, hitNorm);
         float dotWithDir = glm::dot(rayDir, hitNorm);
         if ((dotWithDir < 0.0 && dotWithLamp < 0.0) || (dotWithDir > 0.0 && dotWithLamp > 0.0)) {
