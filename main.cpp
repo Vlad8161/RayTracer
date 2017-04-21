@@ -11,6 +11,7 @@
 
 #define WIDTH (640)
 #define HEIGHT (480)
+#define RENDER_COUNT (1)
 
 void render(const ImageBitmap &img);
 
@@ -48,7 +49,7 @@ int main() {
     ImageBitmap img(WIDTH, HEIGHT);
 
     std::vector<long> durations;
-    for (int i = 0; i < 10; i++) {
+    for (int i = 0; i < RENDER_COUNT; i++) {
         auto start = std::chrono::high_resolution_clock::now();
         renderScene(img, scene);
         auto end = std::chrono::high_resolution_clock::now();

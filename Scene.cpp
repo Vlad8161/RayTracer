@@ -6,6 +6,9 @@
 #include "Scene.h"
 #include "json.h"
 
+#define BARYCENTRIC_HIT
+#define AO_RAYS_COUNT (10)
+
 using Json = nlohmann::json;
 
 std::tuple<bool, float, Hit>
@@ -22,13 +25,40 @@ computeHit(
         const glm::vec3 &rayDir
 );
 
-glm::vec3 traceRay(const Scene &scene, const glm::vec3 &rayFrom, const glm::vec3 &rayDir);
+glm::vec3
+computeDiffusiveLight(
+        const Scene &scene,
+        const glm::vec3 &pt,
+        const glm::vec3 &norm,
+        const glm::vec3 &rayDir,
+        const Material &mtl
+);
+
+glm::vec3
+computeAmbientOcclusion(
+        const Scene &scene,
+        const glm::vec3 &pt,
+        const glm::vec3 &norm,
+        const glm::vec3 &rayDir,
+        const Material &mtl,
+        bool log
+);
+
+glm::vec3
+traceRay(
+        const Scene &scene,
+        const glm::vec3 &rayFrom,
+        const glm::vec3 &rayDir,
+        bool log
+);
 
 
 std::tuple<bool, float, Hit>
-computeHit(const Triangle &triangle, const glm::vec3 &rayFrom, const glm::vec3 &rayDir) {
-#define BARYCENTRIC_HIT
-
+computeHit(
+        const Triangle &triangle,
+        const glm::vec3 &rayFrom,
+        const glm::vec3 &rayDir
+) {
 #ifdef BARYCENTRIC_HIT
     auto e1 = triangle.p2 - triangle.p1;
     auto e2 = triangle.p3 - triangle.p1;
@@ -126,7 +156,11 @@ computeHit(const Triangle &triangle, const glm::vec3 &rayFrom, const glm::vec3 &
 }
 
 std::tuple<bool, float, Hit>
-computeHit(const Sphere &sphere, const glm::vec3 &rayFrom, const glm::vec3 &rayDir) {
+computeHit(
+        const Sphere &sphere,
+        const glm::vec3 &rayFrom,
+        const glm::vec3 &rayDir
+) {
     glm::vec3 v = rayFrom - sphere.center;
     float a = glm::dot(rayDir, rayDir);
     float b = 2 * glm::dot(v, rayDir);
@@ -164,7 +198,11 @@ computeHit(const Sphere &sphere, const glm::vec3 &rayFrom, const glm::vec3 &rayD
     }
 }
 
-void loadScene(Scene &outScene, const std::string &pathToScene) {
+void
+loadScene(
+        Scene &outScene,
+        const std::string &pathToScene
+) {
     std::ifstream is(pathToScene);
     Json inputJson;
     is >> inputJson;
@@ -251,7 +289,11 @@ void loadScene(Scene &outScene, const std::string &pathToScene) {
     outScene.camMat = mat;
 }
 
-void renderScene(ImageBitmap &outImg, const Scene &scene) {
+void
+renderScene(
+        ImageBitmap &outImg,
+        const Scene &scene
+) {
     auto width = outImg.getWidth();
     auto height = outImg.getHeight();
     float camHeight = 0.5;
@@ -264,8 +306,19 @@ void renderScene(ImageBitmap &outImg, const Scene &scene) {
             float rayX = -(camWidth / 2) + j * dw;
             float rayY = -(camHeight / 2) + i * dh;
             glm::vec3 rayCamDir(rayX, rayY, -camDist);
+            glm::vec3 rayDx(dw / 2.0f, 0.0f, 0.0f);
+            glm::vec3 rayDy(0.0f, dh / 2.0f, 0.0f);
             glm::vec3 rayWorldDir = rayCamDir * scene.camMat;
-            auto traceColor = traceRay(scene, scene.camPos, rayWorldDir);
+            glm::vec3 rayWorldDx = rayDx * scene.camMat;
+            glm::vec3 rayWorldDy = rayDy * scene.camMat;
+
+            bool log = false;
+
+            auto traceColor = traceRay(scene, scene.camPos, rayWorldDir, log);
+            traceColor += traceRay(scene, scene.camPos, rayWorldDir + rayWorldDx, log);
+            traceColor += traceRay(scene, scene.camPos, rayWorldDir + rayWorldDy, log);
+            traceColor += traceRay(scene, scene.camPos, rayWorldDir + rayWorldDx + rayWorldDy, log);
+            traceColor /= 4.0f;
             uint8_t r = static_cast<uint8_t>(std::min(255.0f, traceColor.x));
             uint8_t g = static_cast<uint8_t>(std::min(255.0f, traceColor.y));
             uint8_t b = static_cast<uint8_t>(std::min(255.0f, traceColor.z));
@@ -274,7 +327,13 @@ void renderScene(ImageBitmap &outImg, const Scene &scene) {
     }
 }
 
-glm::vec3 traceRay(const Scene &scene, const glm::vec3 &rayFrom, const glm::vec3 &rayDir) {
+glm::vec3
+traceRay(
+        const Scene &scene,
+        const glm::vec3 &rayFrom,
+        const glm::vec3 &rayDir,
+        bool log
+) {
     std::tuple<bool, float, Hit> closestHit(false, 0.0, Hit());
     std::shared_ptr<Material> closestMaterial;
 
@@ -303,13 +362,28 @@ glm::vec3 traceRay(const Scene &scene, const glm::vec3 &rayFrom, const glm::vec3
     glm::vec3 hitPt = std::get<2>(closestHit).point;
     glm::vec3 hitNorm = glm::normalize(std::get<2>(closestHit).norm);
 
-    glm::vec3 retColor = scene.worldAmbientColor + closestMaterial->diffusiveColor * scene.worldAmbientFactor;
+    glm::vec3 retColor = scene.worldAmbientColor;
+    retColor += computeDiffusiveLight(scene, hitPt, hitNorm, rayDir, *closestMaterial);
+    retColor += computeAmbientOcclusion(scene, hitPt, hitNorm, rayDir, *closestMaterial, log);
+
+    return retColor * 255.0f;
+}
+
+glm::vec3
+computeDiffusiveLight(
+        const Scene &scene,
+        const glm::vec3 &pt,
+        const glm::vec3 &norm,
+        const glm::vec3 &rayDir,
+        const Material &mtl
+) {
+    glm::vec3 retColor(0.0f, 0.0f, 0.0f);
     for (auto &lamp : scene.lamps) {
         bool shaded = false;
-        glm::vec3 toLamp = lamp->pos - hitPt;
+        glm::vec3 toLamp = lamp->pos - pt;
 
-        float dotWithLamp = glm::dot(toLamp, hitNorm);
-        float dotWithDir = glm::dot(rayDir, hitNorm);
+        float dotWithLamp = glm::dot(toLamp, norm);
+        float dotWithDir = glm::dot(rayDir, norm);
         if ((dotWithDir < 0.0 && dotWithLamp < 0.0) || (dotWithDir > 0.0 && dotWithLamp > 0.0)) {
             shaded = true;
         }
@@ -319,7 +393,7 @@ glm::vec3 traceRay(const Scene &scene, const glm::vec3 &rayFrom, const glm::vec3
                 break;
             }
 
-            if (std::get<0>(computeHit(*obj, hitPt, lamp->pos - hitPt))) {
+            if (std::get<0>(computeHit(*obj, pt, toLamp))) {
                 shaded = true;
             }
         }
@@ -329,18 +403,69 @@ glm::vec3 traceRay(const Scene &scene, const glm::vec3 &rayFrom, const glm::vec3
                 break;
             }
 
-            if (std::get<0>(computeHit(*obj, hitPt, lamp->pos - hitPt))) {
+            if (std::get<0>(computeHit(*obj, pt, toLamp))) {
                 shaded = true;
             }
         }
 
         if (!shaded) {
             toLamp = glm::normalize(toLamp);
-            float dot = fabsf(glm::dot(hitNorm, toLamp));
-            float k = closestMaterial->diffusiveIntensity * lamp->intensity * dot;
-            retColor += closestMaterial->diffusiveColor * k;
+            float dot = fabsf(glm::dot(norm, toLamp));
+            float k = mtl.diffusiveIntensity * lamp->intensity * dot;
+            retColor += mtl.diffusiveColor * k;
         }
     }
 
-    return retColor * 255.0f;
+    return retColor;
 }
+
+glm::vec3
+computeAmbientOcclusion(
+        const Scene &scene,
+        const glm::vec3 &pt,
+        const glm::vec3 &norm,
+        const glm::vec3 &rayDir,
+        const Material &mtl,
+        bool log
+) {
+    glm::vec3 retColor(0.0f, 0.0f, 0.0f);
+    for (int i = 0; i < AO_RAYS_COUNT; i++) {
+        glm::vec3 realNorm = glm::dot(rayDir, norm) < 0.0f ? norm : -norm;
+        glm::vec3 randomRay;
+        do {
+            float randX = fabsf(2.0f * static_cast<float>(rand()) / static_cast<float>(RAND_MAX)) - 1.0f;
+            float randY = fabsf(2.0f * static_cast<float>(rand()) / static_cast<float>(RAND_MAX)) - 1.0f;
+            float randZ = fabsf(2.0f * static_cast<float>(rand()) / static_cast<float>(RAND_MAX)) - 1.0f;
+            randomRay = glm::vec3(randX, randY, randZ);
+        } while (glm::dot(realNorm, randomRay) < EPS);
+
+        bool shaded = false;
+
+        for (auto &j : scene.triangles) {
+            if (shaded) {
+                break;
+            }
+
+            if (std::get<0>(computeHit(*j, pt, randomRay))) {
+                shaded = true;
+            }
+        }
+
+        for (auto &j : scene.spheres) {
+            if (shaded) {
+                break;
+            }
+
+            if (std::get<0>(computeHit(*j, pt, randomRay))) {
+                shaded = true;
+            }
+        }
+
+        if (!shaded) {
+            retColor += mtl.diffusiveColor * scene.worldAmbientFactor;
+        }
+    }
+
+    return retColor / static_cast<float>(AO_RAYS_COUNT);
+}
+

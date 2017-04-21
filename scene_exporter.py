@@ -26,6 +26,9 @@ def export_scene():
         result['world'] = None
 
     for i in bpy.data.objects:
+        if i.hide_render:
+            continue
+
         if i.type == 'MESH':
             bm = bmesh.new()
             bm.from_mesh(i.data)
