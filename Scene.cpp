@@ -6,23 +6,24 @@
 #include "Scene.h"
 #include "json.h"
 
-#define BARYCENTRIC_HIT
-#define AO_RAYS_COUNT (10)
+#define AO_RAYS_COUNT (30)
 
 using Json = nlohmann::json;
 
-std::tuple<bool, float, Hit>
+Hit
 computeHit(
         const Triangle &triangle,
         const glm::vec3 &rayFrom,
-        const glm::vec3 &rayDir
+        const glm::vec3 &rayDir,
+        const Material &mtl
 );
 
-std::tuple<bool, float, Hit>
+Hit
 computeHit(
         const Sphere &sphere,
         const glm::vec3 &rayFrom,
-        const glm::vec3 &rayDir
+        const glm::vec3 &rayDir,
+        const Material &mtl
 );
 
 glm::vec3
@@ -31,7 +32,8 @@ computeDiffusiveLight(
         const glm::vec3 &pt,
         const glm::vec3 &norm,
         const glm::vec3 &rayDir,
-        const Material &mtl
+        const float k,
+        const glm::vec3 &color
 );
 
 glm::vec3
@@ -40,8 +42,7 @@ computeAmbientOcclusion(
         const glm::vec3 &pt,
         const glm::vec3 &norm,
         const glm::vec3 &rayDir,
-        const Material &mtl,
-        bool log
+        const glm::vec3 color
 );
 
 glm::vec3
@@ -53,26 +54,26 @@ traceRay(
 );
 
 
-std::tuple<bool, float, Hit>
+Hit
 computeHit(
         const Triangle &triangle,
         const glm::vec3 &rayFrom,
-        const glm::vec3 &rayDir
+        const glm::vec3 &rayDir,
+        const Material& mtl
 ) {
-#ifdef BARYCENTRIC_HIT
     auto e1 = triangle.p2 - triangle.p1;
     auto e2 = triangle.p3 - triangle.p1;
     auto q = rayFrom - triangle.p1;
     auto det = glm::dot(rayDir, glm::cross(e2, e1));
 
     if (fabsf(det) < EPS) {
-        return std::make_tuple(false, 0.0, Hit());
+        return Hit(false);
     }
 
     auto dett = glm::dot(q, glm::cross(e1, e2));
     auto t = dett / det;
     if (t < EPS) {
-        return std::make_tuple(false, 0.0, Hit());
+        return Hit(false);
     }
 
     auto detu = glm::dot(rayDir, glm::cross(e2, q));
@@ -80,86 +81,28 @@ computeHit(
     auto u = detu / det;
     auto v = detv / det;
     if (u < 0.0 || v < 0.0 || v + u > 1.0) {
-        return std::make_tuple(false, 0.0, Hit());
+        return Hit(false);
     }
 
     auto hitPt = rayFrom + t * rayDir;
-    return std::make_tuple(true, t, Hit(hitPt, glm::cross(e1, e2)));
-#endif
-
-#ifdef SIDE_HIT
-    auto norm = glm::cross(triangle.p1 - triangle.p2, triangle.p2 - triangle.p3);
-    auto normRayDirDot = glm::dot(norm, rayDir);
-
-    if (fabsf(normRayDirDot) < EPS) {
-        return std::make_tuple(false, 0.0, Hit());
-    }
-
-    auto t = -(glm::dot(norm, rayFrom) - glm::dot(norm, triangle.p1)) / glm::dot(norm, rayDir);
-    if (t < EPS) {
-        return std::make_tuple(false, 0.0, Hit());
-    }
-
-    auto hitPt = rayFrom + t * rayDir;
-    auto a = triangle.p2 - triangle.p1;
-    auto b = triangle.p3 - triangle.p2;
-    auto c = triangle.p1 - triangle.p3;
-    auto ca = glm::cross(hitPt - triangle.p1, a);
-    auto cb = glm::cross(hitPt - triangle.p2, b);
-    auto cc = glm::cross(hitPt - triangle.p3, c);
-    auto dotA = glm::dot(ca, norm);
-    auto dotB = glm::dot(cb, norm);
-    auto dotC = glm::dot(cc, norm);
-    if (dotA > 0.0 && dotB > 0.0 && dotC > 0.0) {
-        return std::make_tuple(true, t, Hit(hitPt, norm));
-    } else if (dotA < 0.0 && dotB < 0.0 && dotC < 0.0) {
-        return std::make_tuple(true, t, Hit(hitPt, norm));
+    glm::vec3 hitColor;
+    if (mtl.texImage) {
+        glm::vec2 texPos = triangle.uv1 + (triangle.uv2 - triangle.uv1) * u + (triangle.uv3 - triangle.uv1) * v;
+        glm::vec4 tex = mtl.texImage->get((unsigned int) texPos.x, (unsigned int) texPos.y);
+        glm::vec3 texRgb(tex.r, tex.g, tex.b);
+        hitColor = (mtl.diffusiveColor * (1 - tex.a)) + (texRgb * tex.a);
     } else {
-        return std::make_tuple(false, 0.0, Hit());
+        hitColor = mtl.diffusiveColor;
     }
-#endif
-
-#ifdef SQUARE_HIT
-    auto norm = glm::cross(triangle.p1 - triangle.p2, triangle.p2 - triangle.p3);
-    auto normRayDirDot = glm::dot(norm, rayDir);
-
-    if (fabsf(normRayDirDot) < EPS) {
-        return std::make_tuple(false, 0.0, Hit());
-    }
-
-    auto t = -(glm::dot(norm, rayFrom) - glm::dot(norm, triangle.p1)) / glm::dot(norm, rayDir);
-    if (t < EPS) {
-        return std::make_tuple(false, 0.0, Hit());
-    }
-
-    auto hitPt = rayFrom + t * rayDir;
-    auto a = glm::distance(triangle.p1, triangle.p2);
-    auto b = glm::distance(triangle.p2, triangle.p3);
-    auto c = glm::distance(triangle.p3, triangle.p1);
-    auto aa = glm::distance(triangle.p1, hitPt);
-    auto bb = glm::distance(triangle.p2, hitPt);
-    auto cc = glm::distance(triangle.p3, hitPt);
-    auto p = (a + b + c) / 2;
-    auto sqrMain = sqrtf(p * (p - a) * (p - b) * (p - c));
-    p = (a + aa + bb) / 2;
-    auto sqr1 = sqrtf(p * (p - a) * (p - aa) * (p - bb));
-    p = (b + bb + cc) / 2;
-    auto sqr2 = sqrtf(p * (p - b) * (p - bb) * (p - cc));
-    p = (c + aa + cc) / 2;
-    auto sqr3 = sqrtf(p * (p - c) * (p - aa) * (p - cc));
-    if (fabsf(sqrMain - (sqr1 + sqr2 + sqr3)) > EPS) {
-        return std::make_tuple(false, 0.0, Hit());
-    }
-    return std::make_tuple(true, t, Hit(hitPt, norm));
-#endif
-
+    return Hit(true, t, hitPt, glm::cross(e1, e2), hitColor);
 }
 
-std::tuple<bool, float, Hit>
+Hit
 computeHit(
         const Sphere &sphere,
         const glm::vec3 &rayFrom,
-        const glm::vec3 &rayDir
+        const glm::vec3 &rayDir,
+        const Material& mtl
 ) {
     glm::vec3 v = rayFrom - sphere.center;
     float a = glm::dot(rayDir, rayDir);
@@ -167,14 +110,14 @@ computeHit(
     float c = glm::dot(v, v) - sphere.radius * sphere.radius;
     float d = b * b - 4 * a * c;
     if (d < 0) {
-        return std::tuple<bool, float, Hit>(false, 0.0, Hit());
+        return Hit(false);
     } else if (fabsf(d) < EPS) {
         float t = -b / 2 * a;
         if (t > EPS) {
             glm::vec3 hitPt = rayFrom + t * rayDir;
-            return std::tuple<bool, float, Hit>(true, t, Hit(hitPt, hitPt - sphere.center));
+            return Hit(true, t, hitPt, hitPt - sphere.center, mtl.diffusiveColor);
         } else {
-            return std::tuple<bool, float, Hit>(false, 0.0, Hit());
+            return Hit(false);
         }
     } else {
         float sqrtD = sqrtf(d);
@@ -183,17 +126,17 @@ computeHit(
         if (t1 > EPS && t2 > EPS) {
             float t = t1 < t2 ? t1 : t2;
             glm::vec3 hitPt = rayFrom + t * rayDir;
-            return std::tuple<bool, float, Hit>(true, t, Hit(hitPt, hitPt - sphere.center));
+            return Hit(true, t, hitPt, hitPt - sphere.center, mtl.diffusiveColor);
         } else if (t1 > EPS) {
             float t = t1;
             glm::vec3 hitPt = rayFrom + t * rayDir;
-            return std::tuple<bool, float, Hit>(true, t, Hit(hitPt, hitPt - sphere.center));
+            return Hit(true, t, hitPt, hitPt - sphere.center, mtl.diffusiveColor);
         } else if (t2 > EPS) {
             float t = t2;
             glm::vec3 hitPt = rayFrom + t * rayDir;
-            return std::tuple<bool, float, Hit>(true, t, Hit(hitPt, hitPt - sphere.center));
+            return Hit(true, t, hitPt, hitPt - sphere.center, mtl.diffusiveColor);
         } else {
-            return std::tuple<bool, float, Hit>(false, 0.0, Hit());
+            return Hit(false);
         }
     }
 }
@@ -224,6 +167,11 @@ loadScene(
         std::shared_ptr<Material> material(new Material());
         material->diffusiveIntensity = i["diffusiveFactor"];
         material->diffusiveColor = glm::vec3(i["diffusiveColor"][0], i["diffusiveColor"][1], i["diffusiveColor"][2]);
+        if (i["imagePath"] != nullptr) {
+            material->texImage = TexImage::createImage(i["imagePath"]);
+            material->texImage->setScaleX(i["scaleX"]);
+            material->texImage->setScaleY(i["scaleY"]);
+        }
         outScene.materials.push_back(material);
     }
 
@@ -239,13 +187,32 @@ loadScene(
         auto p1 = vertices[i["vertices"][0]];
         auto p2 = vertices[i["vertices"][1]];
         auto p3 = vertices[i["vertices"][2]];
+        glm::vec2 uv1(0.0f, 0.0f);
+        glm::vec2 uv2(0.0f, 0.0f);
+        glm::vec2 uv3(0.0f, 0.0f);
+        if (i["uv"] != nullptr) {
+            uv1[0] = i["uv"][0][0];
+            uv1[1] = i["uv"][0][1];
+            uv2[0] = i["uv"][1][0];
+            uv2[1] = i["uv"][1][1];
+            uv3[0] = i["uv"][2][0];
+            uv3[1] = i["uv"][2][1];
+        }
         std::shared_ptr<Material> material;
         if (i["material"] != nullptr) {
             material = outScene.materials[i["material"]];
+            if (material->texImage.get() != nullptr) {
+                uv1[0] *= (material->texImage->getWidth() * material->texImage->getScaleX());
+                uv1[1] *= (material->texImage->getHeight() * material->texImage->getScaleY());
+                uv2[0] *= (material->texImage->getWidth() * material->texImage->getScaleX());
+                uv2[1] *= (material->texImage->getHeight() * material->texImage->getScaleY());
+                uv3[0] *= (material->texImage->getWidth() * material->texImage->getScaleX());
+                uv3[1] *= (material->texImage->getHeight() * material->texImage->getScaleY());
+            }
         } else {
             material.reset(new Material());
         }
-        std::shared_ptr<Triangle> triangle(new Triangle(p1, p2, p3, material));
+        std::shared_ptr<Triangle> triangle(new Triangle(p1, p2, p3, uv1, uv2, uv3, material));
         outScene.triangles.push_back(triangle);
     }
 
@@ -319,6 +286,7 @@ renderScene(
             traceColor += traceRay(scene, scene.camPos, rayWorldDir + rayWorldDy, log);
             traceColor += traceRay(scene, scene.camPos, rayWorldDir + rayWorldDx + rayWorldDy, log);
             traceColor /= 4.0f;
+            traceColor *= 255.f;
             uint8_t r = static_cast<uint8_t>(std::min(255.0f, traceColor.x));
             uint8_t g = static_cast<uint8_t>(std::min(255.0f, traceColor.y));
             uint8_t b = static_cast<uint8_t>(std::min(255.0f, traceColor.z));
@@ -334,39 +302,38 @@ traceRay(
         const glm::vec3 &rayDir,
         bool log
 ) {
-    std::tuple<bool, float, Hit> closestHit(false, 0.0, Hit());
+    Hit closestHit(false);
     std::shared_ptr<Material> closestMaterial;
 
     for (auto &obj : scene.triangles) {
-        auto hit = computeHit(*obj, rayFrom, rayDir);
-        if (std::get<0>(hit) && std::get<1>(hit) > 0 &&
-            (!std::get<0>(closestHit) || std::get<1>(hit) < std::get<1>(closestHit))) {
+        auto hit = computeHit(*obj, rayFrom, rayDir, *obj->material);
+        if (hit.isHit && hit.t > 0 && (!closestHit.isHit || hit.t < closestHit.t)) {
             closestHit = hit;
             closestMaterial = obj->material;
         }
     }
 
     for (auto &obj : scene.spheres) {
-        auto hit = computeHit(*obj, rayFrom, rayDir);
-        if (std::get<0>(hit) && std::get<1>(hit) > 0 &&
-            (!std::get<0>(closestHit) || std::get<1>(hit) < std::get<1>(closestHit))) {
+        auto hit = computeHit(*obj, rayFrom, rayDir, *obj->material);
+        if (hit.isHit && hit.t > 0 && (!closestHit.isHit || hit.t < closestHit.t)) {
             closestHit = hit;
             closestMaterial = obj->material;
         }
     }
 
-    if (!std::get<0>(closestHit)) {
-        return scene.worldHorizonColor * 255.0f;
+    if (!closestHit.isHit) {
+        return scene.worldHorizonColor;
     }
 
-    glm::vec3 hitPt = std::get<2>(closestHit).point;
-    glm::vec3 hitNorm = glm::normalize(std::get<2>(closestHit).norm);
+    glm::vec3 hitPt = closestHit.point;
+    glm::vec3 hitNorm = glm::normalize(closestHit.norm);
+    glm::vec3 hitColor = closestHit.color;
 
     glm::vec3 retColor = scene.worldAmbientColor;
-    retColor += computeDiffusiveLight(scene, hitPt, hitNorm, rayDir, *closestMaterial);
-    retColor += computeAmbientOcclusion(scene, hitPt, hitNorm, rayDir, *closestMaterial, log);
+    retColor += computeDiffusiveLight(scene, hitPt, hitNorm, rayDir, closestMaterial->diffusiveIntensity, hitColor);
+    retColor += computeAmbientOcclusion(scene, hitPt, hitNorm, rayDir, hitColor);
 
-    return retColor * 255.0f;
+    return retColor;
 }
 
 glm::vec3
@@ -375,7 +342,8 @@ computeDiffusiveLight(
         const glm::vec3 &pt,
         const glm::vec3 &norm,
         const glm::vec3 &rayDir,
-        const Material &mtl
+        const float k,
+        const glm::vec3 &color
 ) {
     glm::vec3 retColor(0.0f, 0.0f, 0.0f);
     for (auto &lamp : scene.lamps) {
@@ -388,12 +356,14 @@ computeDiffusiveLight(
             shaded = true;
         }
 
+        Hit hit;
         for (auto &obj : scene.triangles) {
             if (shaded) {
                 break;
             }
 
-            if (std::get<0>(computeHit(*obj, pt, toLamp))) {
+            hit = computeHit(*obj, pt, toLamp, *obj->material);
+            if (hit.isHit) {
                 shaded = true;
             }
         }
@@ -403,7 +373,8 @@ computeDiffusiveLight(
                 break;
             }
 
-            if (std::get<0>(computeHit(*obj, pt, toLamp))) {
+            hit = computeHit(*obj, pt, toLamp, *obj->material);
+            if (hit.isHit) {
                 shaded = true;
             }
         }
@@ -411,8 +382,7 @@ computeDiffusiveLight(
         if (!shaded) {
             toLamp = glm::normalize(toLamp);
             float dot = fabsf(glm::dot(norm, toLamp));
-            float k = mtl.diffusiveIntensity * lamp->intensity * dot;
-            retColor += mtl.diffusiveColor * k;
+            retColor += color * k * lamp->intensity * dot;
         }
     }
 
@@ -425,8 +395,7 @@ computeAmbientOcclusion(
         const glm::vec3 &pt,
         const glm::vec3 &norm,
         const glm::vec3 &rayDir,
-        const Material &mtl,
-        bool log
+        const glm::vec3 color
 ) {
     glm::vec3 retColor(0.0f, 0.0f, 0.0f);
     for (int i = 0; i < AO_RAYS_COUNT; i++) {
@@ -441,12 +410,14 @@ computeAmbientOcclusion(
 
         bool shaded = false;
 
+        Hit hit;
         for (auto &j : scene.triangles) {
             if (shaded) {
                 break;
             }
 
-            if (std::get<0>(computeHit(*j, pt, randomRay))) {
+            hit = computeHit(*j, pt, randomRay, *j->material);
+            if (hit.isHit) {
                 shaded = true;
             }
         }
@@ -456,13 +427,14 @@ computeAmbientOcclusion(
                 break;
             }
 
-            if (std::get<0>(computeHit(*j, pt, randomRay))) {
+            hit = computeHit(*j, pt, randomRay, *j->material);
+            if (hit.isHit) {
                 shaded = true;
             }
         }
 
         if (!shaded) {
-            retColor += mtl.diffusiveColor * scene.worldAmbientFactor;
+            retColor += color * scene.worldAmbientFactor;
         }
     }
 

@@ -39,9 +39,24 @@ def export_scene():
             base_vertex_index = len(result['vertices'])
 
             if i.active_material is not None:
+                texture = i.active_material.active_texture
+                texture_slot = i.active_material.texture_slots[i.active_material.active_texture_index]
+                try:
+                    if texture.type == 'IMAGE':
+                        image_path = texture.image.filepath_from_user()
+                        scale_x = float(texture_slot.scale[0])
+                        scale_y = float(texture_slot.scale[1])
+                    else:
+                        image_path = None
+                except AttributeError:
+                    image_path = None
+
                 result['materials'].append({
                         'diffusiveFactor': i.active_material.diffuse_intensity,
                         'diffusiveColor': [float(i) for i in i.active_material.diffuse_color],
+                        'imagePath': image_path,
+                        'scaleX': scale_x,
+                        'scaleY': scale_y,
                 })
                 material_index = len(result['materials']) - 1
             else:
@@ -51,10 +66,18 @@ def export_scene():
             for j in i.data.vertices:
                 result['vertices'].append([float(k) for k in (mat * j.co)[:]])
 
+            uv_layer = i.data.uv_layers.active
             for j in i.data.polygons:
+                uv = None
+                if uv_layer is not None:
+                    uv = []
+                    for li in range(j.loop_start, j.loop_start + j.loop_total):
+                        uv.append([float(k) for k in uv_layer.data[li].uv])
+
                 result['faces'].append({
                     'vertices': [k + base_vertex_index for k in j.vertices],
-                    'material': material_index
+                    'material': material_index,
+                    'uv': uv,
                 })
 
         if i.type == 'CAMERA':
