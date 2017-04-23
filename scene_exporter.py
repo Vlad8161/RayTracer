@@ -104,7 +104,8 @@ def export_scene():
             )
             result['lamps'].append({
                 'pos': cam_translation_vec,
-                'intensity': i.data.energy
+                'intensity': i.data.energy,
+                'distance': i.data.distance,
             })
 
         if i.type == 'META':

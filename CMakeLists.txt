@@ -19,7 +19,7 @@ set(SOURCE_FILES
         Scene.cpp
         ImageBitmap.h
         main.cpp
-        )
+        TexImage.h)
 add_executable(ray_tracing ${SOURCE_FILES})
 
 target_link_libraries(ray_tracing glfw ${GLFW_LIBRARIES} ${OPENGL_LIBRARY})

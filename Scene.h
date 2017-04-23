@@ -11,113 +11,109 @@
 #include <iostream>
 #include "lodepng.h"
 #include "ImageBitmap.h"
+#include "TexImage.h"
 
 #define EPS (0.0001)
 
-typedef struct _Hit {
-    bool isHit;
-    float t;
-    glm::vec3 point;
-    glm::vec3 norm;
-    glm::vec3 color;
-
-    _Hit(bool isHit = false,
-         float t = 0.0f,
-         const glm::vec3 &point = glm::vec3(),
-         const glm::vec3 &norm = glm::vec3(),
-         const glm::vec3 &color = glm::vec3()
-    ) : isHit(isHit), t(t), point(point), norm(norm), color(color) {}
-} Hit;
-
-
-class TexImage {
-private:
-    std::vector<unsigned char> mImageData;
-    unsigned int mWidth;
-    unsigned int mHeight;
-    float scaleX;
-    float scaleY;
-    bool initialized;
-
-    TexImage() {}
-
-public:
-    static std::shared_ptr<TexImage> createImage(const std::string& filename) {
-        std::shared_ptr<TexImage> retVal(new TexImage);
-        if (lodepng::decode(retVal->mImageData, retVal->mWidth, retVal->mHeight, filename)) {
-            retVal.reset();
-        }
-        return retVal;
-    }
-
-    std::vector<unsigned char>* getRawData() {return &mImageData;}
-    glm::vec4 get(unsigned int x, unsigned int y) const {
-        unsigned realX = x >= mWidth ? x % mWidth : x;
-        unsigned realY = y >= mWidth ? y % mHeight : y;
-        unsigned index = (unsigned int) (mImageData.size() - (realY + 1) * mHeight * 4 + realX * 4);
-        return glm::vec4(
-                static_cast<float>(mImageData[index]) / 255.0f,
-                static_cast<float>(mImageData[index + 1]) / 255.0f,
-                static_cast<float>(mImageData[index + 2]) / 255.0f,
-                static_cast<float>(mImageData[index + 3]) / 255.0f
-        );
-    }
-
-    unsigned int getWidth() const {
-        return mWidth;
-    }
-
-    unsigned int getHeight() const {
-        return mHeight;
-    }
-
-    float getScaleX() const {
-        return scaleX;
-    }
-
-    void setScaleX(float scaleX) {
-        TexImage::scaleX = scaleX;
-    }
-
-    float getScaleY() const {
-        return scaleY;
-    }
-
-    void setScaleY(float scaleY) {
-        TexImage::scaleY = scaleY;
-    }
-};
-
-
 typedef struct _Material {
-    float diffusiveIntensity;
+    glm::vec3 color;
     std::shared_ptr<TexImage> texImage;
-    glm::vec3 diffusiveColor;
+    float diffusiveFactor;
+    float specularFactor;
+    float specularHardness;
+    float reflectionFactor;
+    float refractionFactor;
+    float refractionHardness;
+    bool textured;
 
-    _Material(float diffusiveIntensity = 0.8, const glm::vec3 &diffusiveColor = glm::vec3(0.8, 0.8, 0.8))
-            : diffusiveIntensity(diffusiveIntensity),
-              diffusiveColor(diffusiveColor) {}
+    _Material(const glm::vec3 &color = glm::vec3(0.0f, 0.0f, 0.0f),
+              const std::shared_ptr<TexImage> &texImage = std::shared_ptr<TexImage>(),
+              float diffusiveFactor = 0.0f,
+              float specularFactor = 0.0f,
+              float specularHardness = 0.0f,
+              float reflectionFactor = 0.0f,
+              float refractionFactor = 0.0f,
+              float refractionHardness = 0.0f,
+              bool textured = false
+    ) : color(color), texImage(texImage), diffusiveFactor(diffusiveFactor),
+        specularFactor(specularFactor), specularHardness(specularHardness),
+        reflectionFactor(reflectionFactor), refractionFactor(refractionFactor),
+        refractionHardness(refractionHardness), textured(textured) {}
 } Material;
 
 
+typedef struct _Hit {
+    std::shared_ptr<Material> mtl;
+    glm::vec3 point;
+    glm::vec3 norm;
+    glm::vec3 color;
+    float t;
+    bool isHit;
+
+    _Hit(bool isHit,
+         const std::shared_ptr<Material> &mtl = std::shared_ptr<Material>(),
+         const glm::vec3 &point = glm::vec3(),
+         const glm::vec3 &norm = glm::vec3(),
+         const glm::vec3 &color = glm::vec3(),
+         float t = 0.0f
+    ) : mtl(mtl), point(point), norm(norm), color(color), t(t), isHit(isHit) {}
+} Hit;
+
+
+typedef struct _SphereHit {
+    glm::vec3 point;
+    glm::vec3 norm;
+    float t;
+    bool isHit;
+
+    _SphereHit(
+            bool isHit,
+            float t = 0.0f,
+            const glm::vec3 &point = glm::vec3(),
+            const glm::vec3 &norm = glm::vec3()
+    ) : point(point), norm(norm), t(t), isHit(isHit) {}
+} SphereHit;
+
+
+typedef struct _TriangleHit {
+    glm::vec3 point;
+    glm::vec3 norm;
+    float t;
+    float u;
+    float v;
+    bool isHit;
+
+    _TriangleHit(
+            bool isHit,
+            float t = 0.0f,
+            float u = 0.0f,
+            float v = 0.0f,
+            const glm::vec3 &point = glm::vec3(),
+            const glm::vec3 &norm = glm::vec3()
+    ) : point(point), norm(norm), t(t), u(u), v(v), isHit(isHit) {}
+} TriangleHit;
+
+
 typedef struct _Triangle {
-    glm::vec3 p1;
-    glm::vec3 p2;
-    glm::vec3 p3;
-    glm::vec2 uv1;
-    glm::vec2 uv2;
-    glm::vec2 uv3;
+    glm::vec3 p;
+    glm::vec3 e1;
+    glm::vec3 e2;
+    glm::vec2 uvStart;
+    glm::vec2 uvU;
+    glm::vec2 uvV;
+    glm::vec3 norm;
     std::shared_ptr<Material> material;
 
     _Triangle(
-            const glm::vec3 &p1,
-            const glm::vec3 &p2,
-            const glm::vec3 &p3,
-            const glm::vec2 &uv1,
-            const glm::vec2 &uv2,
-            const glm::vec2 &uv3,
+            const glm::vec3 &p,
+            const glm::vec3 &e1,
+            const glm::vec3 &e2,
+            const glm::vec2 &uvStart,
+            const glm::vec2 &uvU,
+            const glm::vec2 &uvV,
+            const glm::vec3 &norm,
             const std::shared_ptr<Material> &material)
-            : p1(p1), p2(p2), p3(p3), uv1(uv1), uv2(uv2), uv3(uv3), material(material) {}
+            : p(p), e1(e1), e2(e2), uvStart(uvStart), uvU(uvU), uvV(uvV), norm(norm), material(material) {}
 } Triangle;
 
 
@@ -135,8 +131,9 @@ typedef struct _Sphere {
 typedef struct _Lamp {
     glm::vec3 pos;
     float intensity;
+    float distance;
 
-    _Lamp(const glm::vec3 &pos, float intensity) : pos(pos), intensity(intensity) {}
+    _Lamp(const glm::vec3 &pos, float intensity, float distance) : pos(pos), intensity(intensity), distance(distance) {}
 } Lamp;
 
 
