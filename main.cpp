@@ -11,7 +11,7 @@
 
 #define WIDTH (800)
 #define HEIGHT (600)
-#define RENDER_COUNT (1)
+#define RENDER_COUNT (10)
 
 void render(const ImageBitmap &img);
 

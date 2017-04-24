@@ -54,10 +54,9 @@ computeSphereHit(
 
 float
 computeDiffusiveLight(
-        const Scene &scene,
-        const glm::vec3 &pt,
-        const glm::vec3 &norm,
-        const glm::vec3 &rayDir
+        const Lamp &lamp,
+        const glm::vec3 &toLamp,
+        const glm::vec3 &norm
 );
 
 
@@ -67,6 +66,16 @@ computeAmbientOcclusion(
         const glm::vec3 &pt,
         const glm::vec3 &norm,
         const glm::vec3 &rayDir
+);
+
+
+float
+computePhongLight(
+        const Lamp &lamp,
+        const glm::vec3 &toLamp,
+        const glm::vec3 &norm,
+        const glm::vec3 &rayDir,
+        float hardness
 );
 
 
@@ -98,16 +107,11 @@ renderScene(
             glm::vec3 rayWorldDir = rayCamDir * scene.camMat;
             glm::vec3 rayWorldDx = rayDx * scene.camMat;
             glm::vec3 rayWorldDy = rayDy * scene.camMat;
-            auto traceColor = traceRay(scene, scene.camPos, rayWorldDir);
-            traceColor += traceRay(scene, scene.camPos, rayWorldDir + rayWorldDx);
-            traceColor += traceRay(scene, scene.camPos, rayWorldDir + rayWorldDy);
-            traceColor += traceRay(scene, scene.camPos, rayWorldDir + rayWorldDx + rayWorldDy);
+            auto traceColor = traceRay(scene, scene.camPos, glm::normalize(rayWorldDir));
+            traceColor += traceRay(scene, scene.camPos, glm::normalize(rayWorldDir + rayWorldDx));
+            traceColor += traceRay(scene, scene.camPos, glm::normalize(rayWorldDir + rayWorldDy));
+            traceColor += traceRay(scene, scene.camPos, glm::normalize(rayWorldDir + rayWorldDx + rayWorldDy));
             traceColor /= 4.0f;
-            /*traceColor *= 255.f;
-            uint8_t r = static_cast<uint8_t>(std::min(255.0f, traceColor.x));
-            uint8_t g = static_cast<uint8_t>(std::min(255.0f, traceColor.y));
-            uint8_t b = static_cast<uint8_t>(std::min(255.0f, traceColor.z));
-            */
             outImg.setPixel(j, i,
                             powf(traceColor.r / 2.2f, 0.3f),
                             powf(traceColor.g / 2.2f, 0.3f),
@@ -127,9 +131,28 @@ traceRay(
     auto hit = computeClosestHit(scene, rayFrom, rayDir);
 
     if (hit.isHit) {
-        glm::vec3 retColor = scene.worldAmbientColor;
-        retColor += hit.color * hit.mtl->diffusiveFactor * computeDiffusiveLight(scene, hit.point, hit.norm, rayDir);
-        retColor += hit.color * computeAmbientOcclusion(scene, hit.point, hit.norm, rayDir);
+        glm::vec3 retColor =
+                scene.worldAmbientColor + hit.color * computeAmbientOcclusion(scene, hit.point, hit.norm, rayDir);
+        for (auto &lamp : scene.lamps) {
+            bool shaded = false;
+            glm::vec3 toLamp = lamp->pos - hit.point;
+
+            float dotWithLamp = glm::dot(toLamp, hit.norm);
+            float dotWithDir = glm::dot(rayDir, hit.norm);
+            if ((dotWithDir < 0.0 && dotWithLamp < 0.0) || (dotWithDir > 0.0 && dotWithLamp > 0.0)) {
+                shaded = true;
+            }
+
+            if (!shaded) {
+                shaded |= computeAnyHit(scene, hit.point, toLamp);
+            }
+
+            if (!shaded) {
+                retColor += hit.color * hit.mtl->diffusiveFactor * computeDiffusiveLight(*lamp, toLamp, hit.norm);
+                retColor += hit.color * hit.mtl->specularFactor *
+                            computePhongLight(*lamp, toLamp, hit.norm, rayDir, hit.mtl->specularHardness);
+            }
+        }
         return retColor;
     } else {
         return scene.worldHorizonColor;
@@ -311,34 +334,13 @@ computeSphereHit(
 
 float
 computeDiffusiveLight(
-        const Scene &scene,
-        const glm::vec3 &pt,
-        const glm::vec3 &norm,
-        const glm::vec3 &rayDir
+        const Lamp &lamp,
+        const glm::vec3 &toLamp,
+        const glm::vec3 &norm
 ) {
-    float retVal = 0.0f;
-    for (auto &lamp : scene.lamps) {
-        bool shaded = false;
-        glm::vec3 toLamp = lamp->pos - pt;
-
-        float dotWithLamp = glm::dot(toLamp, norm);
-        float dotWithDir = glm::dot(rayDir, norm);
-        if ((dotWithDir < 0.0 && dotWithLamp < 0.0) || (dotWithDir > 0.0 && dotWithLamp > 0.0)) {
-            shaded = true;
-        }
-
-        if (!shaded) {
-            shaded |= computeAnyHit(scene, pt, toLamp);
-        }
-
-        if (!shaded) {
-            float dot = fabsf(glm::dot(norm, toLamp));
-            float sqrLength = glm::dot(toLamp, toLamp);
-            retVal += lamp->intensity * lamp->distance * dot / sqrLength;
-        }
-    }
-
-    return retVal;
+    float dot = fabsf(glm::dot(norm, toLamp));
+    float sqrLength = glm::dot(toLamp, toLamp);
+    return lamp.intensity * lamp.distance * dot / sqrLength;
 }
 
 
@@ -358,6 +360,24 @@ computeAmbientOcclusion(
         }
     }
     return retVal / static_cast<float>(AO_RAYS_COUNT);
+}
+
+
+float
+computePhongLight(
+        const Lamp &lamp,
+        const glm::vec3 &toLamp,
+        const glm::vec3 &norm,
+        const glm::vec3 &rayDir,
+        float hardness
+) {
+    auto toLampReflected = glm::normalize(toLamp - 2.0f * norm * glm::dot(toLamp, norm));
+    auto dot = glm::dot(toLampReflected, rayDir);
+    if (dot > 0.0f) {
+        return (hardness * lamp.distance / glm::dot(toLamp, toLamp)) * powf(dot, hardness);
+    } else {
+        return 0.0f;
+    }
 }
 
 
@@ -397,8 +417,10 @@ loadScene(
 
     for (Json &i : inputJson["materials"]) {
         std::shared_ptr<Material> material(new Material());
-        material->diffusiveFactor = i["diffusiveFactor"];
         material->color = glm::vec3(i["diffusiveColor"][0], i["diffusiveColor"][1], i["diffusiveColor"][2]);
+        material->diffusiveFactor = i["diffusiveFactor"];
+        material->specularFactor = i["specularFactor"];
+        material->specularHardness = i["specularHardness"];
         if (i["imagePath"] != nullptr) {
             material->texImage = TexImage::createImage(i["imagePath"]);
             material->texImage->setScaleX(i["scaleX"]);
