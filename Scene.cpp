@@ -7,6 +7,7 @@
 #include "json.h"
 
 #define AO_RAYS_COUNT (30)
+#define MAX_REFLECTION_DEPTH (2)
 
 
 using Json = nlohmann::json;
@@ -16,7 +17,8 @@ glm::vec3
 traceRay(
         const Scene &scene,
         const glm::vec3 &rayFrom,
-        const glm::vec3 &rayDir
+        const glm::vec3 &rayDir,
+        uint32_t depth
 );
 
 
@@ -107,10 +109,10 @@ renderScene(
             glm::vec3 rayWorldDir = rayCamDir * scene.camMat;
             glm::vec3 rayWorldDx = rayDx * scene.camMat;
             glm::vec3 rayWorldDy = rayDy * scene.camMat;
-            auto traceColor = traceRay(scene, scene.camPos, glm::normalize(rayWorldDir));
-            traceColor += traceRay(scene, scene.camPos, glm::normalize(rayWorldDir + rayWorldDx));
-            traceColor += traceRay(scene, scene.camPos, glm::normalize(rayWorldDir + rayWorldDy));
-            traceColor += traceRay(scene, scene.camPos, glm::normalize(rayWorldDir + rayWorldDx + rayWorldDy));
+            auto traceColor = traceRay(scene, scene.camPos, glm::normalize(rayWorldDir), 0);
+            traceColor += traceRay(scene, scene.camPos, glm::normalize(rayWorldDir + rayWorldDx), 0);
+            traceColor += traceRay(scene, scene.camPos, glm::normalize(rayWorldDir + rayWorldDy), 0);
+            traceColor += traceRay(scene, scene.camPos, glm::normalize(rayWorldDir + rayWorldDx + rayWorldDy), 0);
             traceColor /= 4.0f;
             outImg.setPixel(j, i,
                             powf(traceColor.r / 2.2f, 0.3f),
@@ -126,7 +128,8 @@ glm::vec3
 traceRay(
         const Scene &scene,
         const glm::vec3 &rayFrom,
-        const glm::vec3 &rayDir
+        const glm::vec3 &rayDir,
+        uint32_t depth
 ) {
     auto hit = computeClosestHit(scene, rayFrom, rayDir);
 
@@ -152,6 +155,10 @@ traceRay(
                 retColor += hit.color * hit.mtl->specularFactor *
                             computePhongLight(*lamp, toLamp, hit.norm, rayDir, hit.mtl->specularHardness);
             }
+        }
+        if (hit.mtl->reflectionFactor > EPS && depth < MAX_REFLECTION_DEPTH) {
+            retColor += traceRay(scene, hit.point, rayDir - 2.0f * hit.norm * glm::dot(rayDir, hit.norm), depth + 1) *
+                        hit.mtl->reflectionFactor;
         }
         return retColor;
     } else {
@@ -421,6 +428,7 @@ loadScene(
         material->diffusiveFactor = i["diffusiveFactor"];
         material->specularFactor = i["specularFactor"];
         material->specularHardness = i["specularHardness"];
+        material->reflectionFactor = i["reflectionFactor"];
         if (i["imagePath"] != nullptr) {
             material->texImage = TexImage::createImage(i["imagePath"]);
             material->texImage->setScaleX(i["scaleX"]);

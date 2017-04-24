@@ -56,6 +56,7 @@ def export_scene():
                         'diffusiveColor': [float(i) for i in i.active_material.diffuse_color],
                         'specularFactor': i.active_material.specular_intensity,
                         'specularHardness': i.active_material.specular_hardness,
+                        'reflectionFactor': i.active_material.raytrace_mirror.reflect_factor if i.active_material.raytrace_mirror.use else 0.0,
                         'imagePath': image_path,
                         'scaleX': scale_x,
                         'scaleY': scale_y,
@@ -115,6 +116,7 @@ def export_scene():
                 result['materials'].append({
                         'diffusiveFactor': i.active_material.diffuse_intensity,
                         'diffusiveColor': [float(i) for i in i.active_material.diffuse_color],
+                        'reflectionFactor': i.active_material.raytrace_mirror.reflect_factor if i.active_material.raytrace_mirror.use else 0.0,
                         'specularFactor': i.active_material.specular_intensity,
                         'specularHardness': i.active_material.specular_hardness,
                 })
