@@ -9,8 +9,8 @@
 #include "Scene.h"
 #include "json.h"
 
-#define WIDTH (640)
-#define HEIGHT (480)
+#define WIDTH (800)
+#define HEIGHT (600)
 #define RENDER_COUNT (1)
 
 void render(const ImageBitmap &img);
@@ -73,7 +73,7 @@ int main() {
 
 void render(const ImageBitmap &img) {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    glDrawPixels(img.getWidth(), img.getHeight(), GL_RGB, GL_UNSIGNED_BYTE, img.getRawData());
+    glDrawPixels(img.getWidth(), img.getHeight(), GL_RGB, GL_FLOAT, img.getRawData());
 }
 
 

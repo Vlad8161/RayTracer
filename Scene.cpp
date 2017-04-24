@@ -103,11 +103,16 @@ renderScene(
             traceColor += traceRay(scene, scene.camPos, rayWorldDir + rayWorldDy);
             traceColor += traceRay(scene, scene.camPos, rayWorldDir + rayWorldDx + rayWorldDy);
             traceColor /= 4.0f;
-            traceColor *= 255.f;
+            /*traceColor *= 255.f;
             uint8_t r = static_cast<uint8_t>(std::min(255.0f, traceColor.x));
             uint8_t g = static_cast<uint8_t>(std::min(255.0f, traceColor.y));
             uint8_t b = static_cast<uint8_t>(std::min(255.0f, traceColor.z));
-            outImg.setPixel(j, i, r, g, b);
+            */
+            outImg.setPixel(j, i,
+                            powf(traceColor.r / 2.2f, 0.3f),
+                            powf(traceColor.g / 2.2f, 0.3f),
+                            powf(traceColor.b / 2.2f, 0.3f)
+            );
         }
     }
 }

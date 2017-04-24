@@ -9,45 +9,30 @@
 
 class ImageBitmap {
 private:
-    std::unique_ptr<uint8_t> mData;
+    float* mData;
     int mWidth;
     int mHeight;
+    ImageBitmap(const ImageBitmap& imageBitmap) {}
 
 public:
     ImageBitmap(int width, int height) {
         this->mWidth = width;
         this->mHeight = height;
-        this->mData.reset(new uint8_t[mWidth * mHeight * 3]);
+        this->mData = new float[mWidth * mHeight * 3];
         for (int i = 0; i < mWidth * mHeight * 3; i++) {
-            this->mData.get()[i] = 0;
+            this->mData[i] = 0.0f;
         }
+    }
+
+    ~ImageBitmap() {
+        delete[] mData;
     }
 
     inline void* getRawData() const {
-        return mData.get();
+        return mData;
     }
 
-    inline uint32_t getPixel(int x, int y) const {
-         if (x < 0 || x >= mWidth) {
-            return 0xFFFFFFFF;
-        }
-
-        if (y < 0 || y >= mHeight) {
-            return 0xFFFFFFFF;
-        }
-
-        uint8_t* data = mData.get();
-        uint8_t* needPixelPtr = data + mWidth * y * 3 + x * 3;
-        uint8_t r = needPixelPtr[0];
-        uint8_t g = needPixelPtr[1];
-        uint8_t b = needPixelPtr[2];
-        return
-                ((uint32_t) r) |
-                ((uint32_t) g << 8) |
-                ((uint32_t) b << 16);
-    }
-
-    inline void setPixel(int x, int y, uint8_t r, uint8_t g, uint8_t b) {
+    inline void setPixel(int x, int y, float r, float g, float b) {
         if (x < 0 || x >= mWidth) {
             return;
         }
@@ -56,8 +41,7 @@ public:
             return;
         }
 
-        uint8_t* data = mData.get();
-        uint8_t* needPixelPtr = data + mWidth * y * 3 + x * 3;
+        float* needPixelPtr = mData + mWidth * y * 3 + x * 3;
         needPixelPtr[0] = r;
         needPixelPtr[1] = g;
         needPixelPtr[2] = b;
