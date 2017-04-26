@@ -352,6 +352,24 @@ computeDiffusiveLight(
 
 
 float
+computePhongLight(
+        const Lamp &lamp,
+        const glm::vec3 &toLamp,
+        const glm::vec3 &norm,
+        const glm::vec3 &rayDir,
+        float hardness
+) {
+    auto toLampReflected = glm::normalize(toLamp - 2.0f * norm * glm::dot(toLamp, norm));
+    auto dot = glm::dot(toLampReflected, rayDir);
+    if (dot > 0.0f) {
+        return (hardness * lamp.distance / glm::dot(toLamp, toLamp)) * powf(dot, hardness);
+    } else {
+        return 0.0f;
+    }
+}
+
+
+float
 computeAmbientOcclusion(
         const Scene &scene,
         const glm::vec3 &pt,
@@ -370,33 +388,13 @@ computeAmbientOcclusion(
 }
 
 
-float
-computePhongLight(
-        const Lamp &lamp,
-        const glm::vec3 &toLamp,
-        const glm::vec3 &norm,
-        const glm::vec3 &rayDir,
-        float hardness
-) {
-    auto toLampReflected = glm::normalize(toLamp - 2.0f * norm * glm::dot(toLamp, norm));
-    auto dot = glm::dot(toLampReflected, rayDir);
-    if (dot > 0.0f) {
-        return (hardness * lamp.distance / glm::dot(toLamp, toLamp)) * powf(dot, hardness);
-    } else {
-        return 0.0f;
-    }
-}
-
-
 glm::vec3 generateRandomRayInHalfSphere(const glm::vec3 &norm) {
     glm::vec3 randomRay;
-    do {
-        float randX = fabsf(2.0f * static_cast<float>(rand()) / static_cast<float>(RAND_MAX)) - 1.0f;
-        float randY = fabsf(2.0f * static_cast<float>(rand()) / static_cast<float>(RAND_MAX)) - 1.0f;
-        float randZ = fabsf(2.0f * static_cast<float>(rand()) / static_cast<float>(RAND_MAX)) - 1.0f;
-        randomRay = glm::vec3(randX, randY, randZ);
-    } while (glm::dot(norm, randomRay) < EPS);
-    return randomRay;
+    float randX = fabsf(2.0f * static_cast<float>(rand()) / static_cast<float>(RAND_MAX)) - 1.0f;
+    float randY = fabsf(2.0f * static_cast<float>(rand()) / static_cast<float>(RAND_MAX)) - 1.0f;
+    float randZ = fabsf(2.0f * static_cast<float>(rand()) / static_cast<float>(RAND_MAX)) - 1.0f;
+    randomRay = glm::vec3(randX, randY, randZ);
+    return glm::dot(randomRay, norm) < EPS ? -randomRay : randomRay;
 }
 
 
