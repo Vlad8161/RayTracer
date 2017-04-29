@@ -3,6 +3,7 @@
 //
 
 #include <fstream>
+#include <thread>
 #include "Scene.h"
 #include "json.h"
 
@@ -12,97 +13,35 @@
 
 using Json = nlohmann::json;
 
-
-glm::vec3
-traceRay(
-        const Scene &scene,
-        const glm::vec3 &rayFrom,
-        const glm::vec3 &rayDir,
-        uint32_t depth
-);
-
-
-Hit
-computeClosestHit(
-        const Scene &scene,
-        const glm::vec3 &rayFrom,
-        const glm::vec3 &rayDir
-);
-
-
-bool
-computeAnyHit(
-        const Scene &scene,
-        const glm::vec3 &rayFrom,
-        const glm::vec3 &rayDir
-);
-
-
-TriangleHit
-computeTriangleHit(
-        const Triangle &triangle,
-        const glm::vec3 &rayFrom,
-        const glm::vec3 &rayDir
-);
-
-
-SphereHit
-computeSphereHit(
-        const Sphere &sphere,
-        const glm::vec3 &rayFrom,
-        const glm::vec3 &rayDir
-);
-
-
-float
-computeDiffusiveLight(
-        const Lamp &lamp,
-        const glm::vec3 &toLamp,
-        const glm::vec3 &norm
-);
-
-
-float
-computeAmbientOcclusion(
-        const Scene &scene,
-        const glm::vec3 &pt,
-        const glm::vec3 &norm,
-        const glm::vec3 &rayDir
-);
-
-
-float
-computePhongLight(
-        const Lamp &lamp,
-        const glm::vec3 &toLamp,
-        const glm::vec3 &norm,
-        const glm::vec3 &rayDir,
-        float hardness
-);
-
-
-glm::vec3
-generateRandomRayInHalfSphere(
-        const glm::vec3 &norm
-);
-
+void
+renderScene(
+        ImageBitmap &outImage,
+        const Scene &scene
+) {
+    renderScene(outImage, scene, outImage.getWidth(), outImage.getHeight(), 0, 0);
+}
 
 void
 renderScene(
         ImageBitmap &outImg,
-        const Scene &scene
+        const Scene &scene,
+        int fullWidth,
+        int fullHeight,
+        int x,
+        int y
 ) {
-    auto width = outImg.getWidth();
-    auto height = outImg.getHeight();
+
+    auto width = fullWidth;
+    auto height = fullHeight;
     float camHeight = 0.5;
     float camWidth = static_cast<float>(width) * (camHeight / static_cast<float>(height));
     float camDist = 1.0;
     float dh = camHeight / static_cast<float>(height);
     float dw = camWidth / static_cast<float>(width);
-    for (int i = 0; i < height; i++) {
-        for (int j = 0; j < width; j++) {
-            float rayX = -(camWidth / 2) + j * dw;
-            float rayY = -(camHeight / 2) + i * dh;
+    for (int i = 0; i < outImg.getHeight(); i++) {
+        for (int j = 0; j < outImg.getWidth(); j++) {
+            float rayX = -(camWidth / 2) + (j + x) * dw;
+            float rayY = -(camHeight / 2) + (i + y) * dh;
             glm::vec3 rayCamDir(rayX, rayY, -camDist);
             glm::vec3 rayDx(dw / 2.0f, 0.0f, 0.0f);
             glm::vec3 rayDy(0.0f, dh / 2.0f, 0.0f);
@@ -120,6 +59,105 @@ renderScene(
                             powf(traceColor.b / 2.2f, 0.3f)
             );
         }
+    }
+}
+
+
+std::shared_ptr<bool>
+renderParallel(
+        std::shared_ptr<Scene> scene,
+        std::shared_ptr<SynchronizedQueue<std::tuple<int, int, std::shared_ptr<ImageBitmap>>>> outQueue,
+        int width,
+        int height
+) {
+    std::shared_ptr<std::vector<std::tuple<int, int, int, int>>> inQueue(
+            new std::vector<std::tuple<int, int, int, int>>()
+    );
+    std::shared_ptr<std::mutex> inQueueMutex(new std::mutex());
+    std::shared_ptr<bool> finishedFlag(new bool(false));
+    int fullHorzBlocks = width / SUB_BLOCK_WIDTH;
+    int fullVertBlocks = width / SUB_BLOCK_WIDTH;
+    int lastHorzBlockWidth = width % SUB_BLOCK_WIDTH;
+    int lastVertBlockHeight = width % SUB_BLOCK_WIDTH;
+    for (int i = 0; i < fullVertBlocks; i++) {
+        for (int j = 0; j < fullHorzBlocks; j++) {
+            inQueue->push_back(std::make_tuple(
+                    j * SUB_BLOCK_WIDTH,
+                    i * SUB_BLOCK_HEIGHT,
+                    SUB_BLOCK_WIDTH,
+                    SUB_BLOCK_HEIGHT
+            ));
+        }
+    }
+
+    if (lastHorzBlockWidth > 0) {
+        for (int i = 0; i < fullVertBlocks; i++) {
+            inQueue->push_back(std::make_tuple(
+                    fullHorzBlocks * SUB_BLOCK_WIDTH,
+                    i * SUB_BLOCK_HEIGHT,
+                    lastHorzBlockWidth,
+                    SUB_BLOCK_HEIGHT
+            ));
+        }
+    }
+
+    if (lastVertBlockHeight > 0) {
+        for (int i = 0; i < fullHorzBlocks; i++) {
+            inQueue->push_back(std::make_tuple(
+                    i * SUB_BLOCK_WIDTH,
+                    fullVertBlocks * SUB_BLOCK_HEIGHT,
+                    SUB_BLOCK_WIDTH,
+                    lastVertBlockHeight
+            ));
+        }
+    }
+
+    if (lastHorzBlockWidth > 0 && lastVertBlockHeight > 0) {
+        inQueue->push_back(std::make_tuple(
+                fullHorzBlocks * SUB_BLOCK_WIDTH,
+                fullVertBlocks * SUB_BLOCK_HEIGHT,
+                lastHorzBlockWidth,
+                lastVertBlockHeight
+        ));
+    }
+
+    for (int i = 0; i < THREAD_POOL_SIZE; i++) {
+        std::thread thread(taskProcessor, scene, finishedFlag, outQueue, inQueue, inQueueMutex, width, height);
+        thread.detach();
+    }
+
+    return finishedFlag;
+}
+
+
+void taskProcessor(
+        std::shared_ptr<Scene> scene,
+        std::shared_ptr<bool> finishedFlag,
+        std::shared_ptr<SynchronizedQueue<std::tuple<int, int, std::shared_ptr<ImageBitmap>>>> outQueue,
+        std::shared_ptr<std::vector<std::tuple<int, int, int, int>>> inQueue,
+        std::shared_ptr<std::mutex> inQueueMutex,
+        int fullWidth,
+        int fullHeight
+) {
+    while (true) {
+        int x, y, w, h;
+        {
+            std::lock_guard<std::mutex> lock(*inQueueMutex);
+            if (inQueue->size() == 0) {
+                *finishedFlag = true;
+                return;
+            }
+
+            auto subBlock = (*inQueue)[inQueue->size() - 1];
+            x = std::get<0>(subBlock);
+            y = std::get<1>(subBlock);
+            w = std::get<2>(subBlock);
+            h = std::get<3>(subBlock);
+            inQueue->pop_back();
+        }
+        std::shared_ptr<ImageBitmap> outImg(new ImageBitmap(w, h));
+        renderScene(*outImg, *scene, fullWidth, fullHeight, x, y);
+        outQueue->push_back(std::make_tuple(x, y, outImg));
     }
 }
 

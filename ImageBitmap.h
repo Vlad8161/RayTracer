@@ -6,6 +6,7 @@
 #define RAY_TRACING_IMAGEBITMAP_H
 
 #include <memory>
+#include <cstring>
 
 class ImageBitmap {
 private:
@@ -47,12 +48,29 @@ public:
         needPixelPtr[2] = b;
     }
 
+    inline float* getPixel(int x, int y) const {
+        return mData + mWidth * y * 3 + x * 3;
+    }
+
     inline int getHeight() const {
         return mHeight;
     }
 
     inline int getWidth() const {
         return mWidth;
+    }
+
+    inline void clear() {
+        memset(mData, 0, (size_t) (mWidth * mHeight * 3 * sizeof(float)));
+    }
+
+    inline void copyImageTo(int x, int y, const ImageBitmap& img) {
+        for (int i = 0; i < img.getHeight() && i + y < mHeight; i++) {
+            for (int j = 0; j < img.getWidth() && j + x < mWidth; j++) {
+                float* inputPixel = img.getPixel(j, i);
+                setPixel(x + j, y + i, inputPixel[0], inputPixel[1], inputPixel[2]);
+            }
+        }
     }
 };
 
