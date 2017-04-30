@@ -10,7 +10,7 @@
 #include "ImageBitmap.h"
 #include "SynchronizedQueue.h"
 #include "Scene.h"
-#include "json.h"
+#include "lib/json.h"
 
 void render(const ImageBitmap &img);
 

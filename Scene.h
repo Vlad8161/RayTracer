@@ -11,7 +11,7 @@
 #include <vector>
 #include <memory>
 #include <iostream>
-#include "lodepng.h"
+#include "lib/lodepng.h"
 #include "ImageBitmap.h"
 #include "TexImage.h"
 #include "SynchronizedQueue.h"

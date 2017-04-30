@@ -5,7 +5,7 @@
 #include <fstream>
 #include <thread>
 #include "Scene.h"
-#include "json.h"
+#include "lib/json.h"
 
 #define AO_RAYS_COUNT (30)
 #define MAX_REFLECTION_DEPTH (2)

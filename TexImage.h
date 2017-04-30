@@ -8,7 +8,7 @@
 #include <vector>
 #include <memory>
 #include <glm/glm.hpp>
-#include "lodepng.h"
+#include "lib/lodepng.h"
 
 class TexImage {
 private:

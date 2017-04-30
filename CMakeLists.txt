@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.6)
 project(ray_tracing)
 
 find_package(OpenGL REQUIRED)
+find_package(OpenCL REQUIRED)
 
 add_subdirectory(glfw)
 
@@ -12,9 +13,9 @@ set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2 -Wall -Wextra")
 
 set(SOURCE_FILES
-        json.h
-        lodepng.h
-        lodepng.cpp
+        lib/json.h
+        lib/lodepng.h
+        lib/lodepng.cpp
         Scene.h
         Scene.cpp
         ImageBitmap.h
