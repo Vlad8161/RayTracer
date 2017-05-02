@@ -7,12 +7,12 @@
 #include <glm/glm.hpp>
 #include <fstream>
 
-#include "ImageBitmap.h"
-#include "SynchronizedQueue.h"
-#include "Scene.h"
+#include "image_bitmap.h"
+#include "synchronized_queue.h"
+#include "scene.h"
 #include "lib/json.h"
 
-void render(const ImageBitmap &img);
+void render(const image_bitmap &img);
 
 std::ostream &operator<<(std::ostream &os, glm::mat3 x);
 
@@ -20,9 +20,9 @@ std::ostream &operator<<(std::ostream &os, glm::vec3 x);
 
 int main() {
     std::shared_ptr<Scene> scene(new Scene());
-    std::shared_ptr<ImageBitmap> img(new ImageBitmap(WIDTH, HEIGHT));
-    std::shared_ptr<SynchronizedQueue<std::tuple<int, int, std::shared_ptr<ImageBitmap>>>> queue(
-            new SynchronizedQueue<std::tuple<int, int, std::shared_ptr<ImageBitmap>>>());
+    std::shared_ptr<image_bitmap> img(new image_bitmap(WIDTH, HEIGHT));
+    std::shared_ptr<synchronized_queue<std::tuple<int, int, std::shared_ptr<image_bitmap>>>> queue(
+            new synchronized_queue<std::tuple<int, int, std::shared_ptr<image_bitmap>>>());
     loadScene(*scene, "/home/vlad/projects/blender/hello.scene");
 
     if (!glfwInit()) {
@@ -89,9 +89,14 @@ int main() {
     }
 #else
     std::vector<long> durations;
+#ifdef GPU_ACCELERATION
+    std::shared_ptr<OpenClExecutor> clExecutor(new OpenClExecutor(*scene));
+#else
+    std::shared_ptr<OpenClExecutor> clExecutor(nullptr);
+#endif
     for (int i = 0; i < RENDER_COUNT; i++) {
         auto start = std::chrono::high_resolution_clock::now();
-        renderScene(*img, *scene);
+        renderScene(*img, *scene, clExecutor);
         auto end = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
         durations.push_back(duration);
@@ -112,7 +117,7 @@ int main() {
 }
 
 
-void render(const ImageBitmap &img) {
+void render(const image_bitmap &img) {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glDrawPixels(img.getWidth(), img.getHeight(), GL_RGB, GL_FLOAT, img.getRawData());
 }

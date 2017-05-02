@@ -7,7 +7,8 @@
 
 #define WIDTH (800)
 #define HEIGHT (600)
-#define RENDER_PARALLEL
+//#define RENDER_PARALLEL
+//#define GPU_ACCELERATION
 #define RENDER_COUNT (1)
 #define THREAD_POOL_SIZE (1)
 #define SUB_BLOCK_WIDTH (48)

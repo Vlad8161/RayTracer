@@ -8,15 +8,15 @@
 #include <memory>
 #include <cstring>
 
-class ImageBitmap {
+class image_bitmap {
 private:
     float* mData;
     int mWidth;
     int mHeight;
-    ImageBitmap(const ImageBitmap& imageBitmap) {}
+    image_bitmap(const image_bitmap& imageBitmap) {}
 
 public:
-    ImageBitmap(int width, int height) {
+    image_bitmap(int width, int height) {
         this->mWidth = width;
         this->mHeight = height;
         this->mData = new float[mWidth * mHeight * 3];
@@ -25,7 +25,7 @@ public:
         }
     }
 
-    ~ImageBitmap() {
+    ~image_bitmap() {
         delete[] mData;
     }
 
@@ -64,7 +64,7 @@ public:
         memset(mData, 0, (size_t) (mWidth * mHeight * 3 * sizeof(float)));
     }
 
-    inline void copyImageTo(int x, int y, const ImageBitmap& img) {
+    inline void copyImageTo(int x, int y, const image_bitmap& img) {
         for (int i = 0; i < img.getHeight() && i + y < mHeight; i++) {
             for (int j = 0; j < img.getWidth() && j + x < mWidth; j++) {
                 float* inputPixel = img.getPixel(j, i);

@@ -12,13 +12,15 @@
 #include <memory>
 #include <iostream>
 #include "lib/lodepng.h"
-#include "ImageBitmap.h"
-#include "TexImage.h"
-#include "SynchronizedQueue.h"
+#include "image_bitmap.h"
+#include "tex_image.h"
+#include "synchronized_queue.h"
+
+class OpenClExecutor;
 
 typedef struct _Material {
     glm::vec3 color;
-    std::shared_ptr<TexImage> texImage;
+    std::shared_ptr<tex_image> texImage;
     float diffusiveFactor;
     float specularFactor;
     float specularHardness;
@@ -28,7 +30,7 @@ typedef struct _Material {
     bool textured;
 
     _Material(const glm::vec3 &color = glm::vec3(0.0f, 0.0f, 0.0f),
-              const std::shared_ptr<TexImage> &texImage = std::shared_ptr<TexImage>(),
+              const std::shared_ptr<tex_image> &texImage = std::shared_ptr<tex_image>(),
               float diffusiveFactor = 0.0f,
               float specularFactor = 0.0f,
               float specularHardness = 0.0f,
@@ -160,15 +162,17 @@ loadScene(
 
 void
 renderScene(
-        ImageBitmap &outImg,
-        const Scene &scene
+        image_bitmap &outImg,
+        const Scene &scene,
+        const std::shared_ptr<OpenClExecutor> clExecutor
 );
 
 
 void
 renderScene(
-        ImageBitmap &outImg,
+        image_bitmap &outImg,
         const Scene &scene,
+        const std::shared_ptr<OpenClExecutor> clExecutor,
         int fullWidth,
         int fullHeight,
         int x,
@@ -179,7 +183,7 @@ renderScene(
 std::shared_ptr<bool>
 renderParallel(
         std::shared_ptr<Scene> scene,
-        std::shared_ptr<SynchronizedQueue<std::tuple<int, int, std::shared_ptr<ImageBitmap>>>> outQueue,
+        std::shared_ptr<synchronized_queue<std::tuple<int, int, std::shared_ptr<image_bitmap>>>> outQueue,
         int width,
         int height
 );
@@ -188,7 +192,7 @@ renderParallel(
 void taskProcessor(
         std::shared_ptr<Scene> scene,
         std::shared_ptr<bool> finishedFlag,
-        std::shared_ptr<SynchronizedQueue<std::tuple<int, int, std::shared_ptr<ImageBitmap>>>> outQueue,
+        std::shared_ptr<synchronized_queue<std::tuple<int, int, std::shared_ptr<image_bitmap>>>> outQueue,
         std::shared_ptr<std::vector<std::tuple<int, int, int, int>>> inQueue,
         std::shared_ptr<std::mutex> inQueueMutex,
         int fullWidth,
@@ -199,6 +203,7 @@ void taskProcessor(
 glm::vec3
 traceRay(
         const Scene &scene,
+        const std::shared_ptr<OpenClExecutor> clExecutor,
         const glm::vec3 &rayFrom,
         const glm::vec3 &rayDir,
         uint32_t depth
@@ -213,9 +218,27 @@ computeClosestHit(
 );
 
 
+Hit
+computeClosestHitCl(
+        const Scene &scene,
+        const std::shared_ptr<OpenClExecutor> clExecutor,
+        const glm::vec3 &rayFrom,
+        const glm::vec3 &rayDir
+);
+
+
 bool
 computeAnyHit(
         const Scene &scene,
+        const glm::vec3 &rayFrom,
+        const glm::vec3 &rayDir
+);
+
+
+bool
+computeAnyHitCl(
+        const Scene &scene,
+        const std::shared_ptr<OpenClExecutor> clExecutor,
         const glm::vec3 &rayFrom,
         const glm::vec3 &rayDir
 );
@@ -248,6 +271,7 @@ computeDiffusiveLight(
 float
 computeAmbientOcclusion(
         const Scene &scene,
+        const std::shared_ptr<OpenClExecutor> clExecutor,
         const glm::vec3 &pt,
         const glm::vec3 &norm,
         const glm::vec3 &rayDir

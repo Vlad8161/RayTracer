@@ -8,6 +8,9 @@ add_subdirectory(glfw)
 
 include_directories(glfw/include)
 include_directories(glm)
+include_directories(${OpenCL_INCLUDE_DIRS})
+
+link_directories(${OpenCL_LIBRARY})
 
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2 -Wall -Wextra")
@@ -16,11 +19,14 @@ set(SOURCE_FILES
         lib/json.h
         lib/lodepng.h
         lib/lodepng.cpp
-        Scene.h
-        Scene.cpp
-        ImageBitmap.h
+        scene.h
+        scene.cpp
+        opencl_executor.h
+        opencl_executor.cpp
+        image_bitmap.h
         main.cpp
-        TexImage.h SynchronizedQueue.h config.h)
+        tex_image.h synchronized_queue.h config.h)
 add_executable(ray_tracing ${SOURCE_FILES})
 
-target_link_libraries(ray_tracing glfw ${GLFW_LIBRARIES} ${OPENGL_LIBRARY})
+target_include_directories(ray_tracing PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(ray_tracing glfw ${GLFW_LIBRARIES} ${OPENGL_LIBRARY} ${OpenCL_LIBRARY})

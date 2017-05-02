@@ -4,7 +4,7 @@
 
 #include <fstream>
 #include <thread>
-#include "Scene.h"
+#include "scene.h"
 #include "lib/json.h"
 
 #define AO_RAYS_COUNT (30)
@@ -15,16 +15,18 @@ using Json = nlohmann::json;
 
 void
 renderScene(
-        ImageBitmap &outImage,
-        const Scene &scene
+        image_bitmap &outImage,
+        const Scene &scene,
+        const std::shared_ptr<OpenClExecutor> clExecutor
 ) {
-    renderScene(outImage, scene, outImage.getWidth(), outImage.getHeight(), 0, 0);
+    renderScene(outImage, scene, clExecutor, outImage.getWidth(), outImage.getHeight(), 0, 0);
 }
 
 void
 renderScene(
-        ImageBitmap &outImg,
+        image_bitmap &outImg,
         const Scene &scene,
+        const std::shared_ptr<OpenClExecutor> clExecutor,
         int fullWidth,
         int fullHeight,
         int x,
@@ -48,10 +50,10 @@ renderScene(
             glm::vec3 rayWorldDir = rayCamDir * scene.camMat;
             glm::vec3 rayWorldDx = rayDx * scene.camMat;
             glm::vec3 rayWorldDy = rayDy * scene.camMat;
-            auto traceColor = traceRay(scene, scene.camPos, glm::normalize(rayWorldDir), 0);
-            traceColor += traceRay(scene, scene.camPos, glm::normalize(rayWorldDir + rayWorldDx), 0);
-            traceColor += traceRay(scene, scene.camPos, glm::normalize(rayWorldDir + rayWorldDy), 0);
-            traceColor += traceRay(scene, scene.camPos, glm::normalize(rayWorldDir + rayWorldDx + rayWorldDy), 0);
+            auto traceColor = traceRay(scene, clExecutor, scene.camPos, glm::normalize(rayWorldDir), 0);
+            traceColor += traceRay(scene, clExecutor, scene.camPos, glm::normalize(rayWorldDir + rayWorldDx), 0);
+            traceColor += traceRay(scene, clExecutor, scene.camPos, glm::normalize(rayWorldDir + rayWorldDy), 0);
+            traceColor += traceRay(scene, clExecutor, scene.camPos, glm::normalize(rayWorldDir + rayWorldDx + rayWorldDy), 0);
             traceColor /= 4.0f;
             outImg.setPixel(j, i,
                             powf(traceColor.r / 2.2f, 0.3f),
@@ -66,7 +68,7 @@ renderScene(
 std::shared_ptr<bool>
 renderParallel(
         std::shared_ptr<Scene> scene,
-        std::shared_ptr<SynchronizedQueue<std::tuple<int, int, std::shared_ptr<ImageBitmap>>>> outQueue,
+        std::shared_ptr<synchronized_queue<std::tuple<int, int, std::shared_ptr<image_bitmap>>>> outQueue,
         int width,
         int height
 ) {
@@ -133,7 +135,7 @@ renderParallel(
 void taskProcessor(
         std::shared_ptr<Scene> scene,
         std::shared_ptr<bool> finishedFlag,
-        std::shared_ptr<SynchronizedQueue<std::tuple<int, int, std::shared_ptr<ImageBitmap>>>> outQueue,
+        std::shared_ptr<synchronized_queue<std::tuple<int, int, std::shared_ptr<image_bitmap>>>> outQueue,
         std::shared_ptr<std::vector<std::tuple<int, int, int, int>>> inQueue,
         std::shared_ptr<std::mutex> inQueueMutex,
         int fullWidth,
@@ -155,8 +157,8 @@ void taskProcessor(
             h = std::get<3>(subBlock);
             inQueue->pop_back();
         }
-        std::shared_ptr<ImageBitmap> outImg(new ImageBitmap(w, h));
-        renderScene(*outImg, *scene, fullWidth, fullHeight, x, y);
+        std::shared_ptr<image_bitmap> outImg(new image_bitmap(w, h));
+        renderScene(*outImg, *scene, std::shared_ptr<OpenClExecutor>(nullptr), fullWidth, fullHeight, x, y);
         outQueue->push_back(std::make_tuple(x, y, outImg));
     }
 }
@@ -165,15 +167,21 @@ void taskProcessor(
 glm::vec3
 traceRay(
         const Scene &scene,
+        const std::shared_ptr<OpenClExecutor> clExecutor,
         const glm::vec3 &rayFrom,
         const glm::vec3 &rayDir,
         uint32_t depth
 ) {
-    auto hit = computeClosestHit(scene, rayFrom, rayDir);
+    Hit hit(false);
+    if (clExecutor.get() != nullptr) {
+        hit = computeClosestHitCl(scene, clExecutor, rayFrom, rayDir);
+    } else {
+        hit = computeClosestHit(scene, rayFrom, rayDir);
+    }
 
     if (hit.isHit) {
         glm::vec3 retColor =
-                scene.worldAmbientColor + hit.color * computeAmbientOcclusion(scene, hit.point, hit.norm, rayDir);
+                scene.worldAmbientColor + hit.color * computeAmbientOcclusion(scene, clExecutor, hit.point, hit.norm, rayDir);
         for (auto &lamp : scene.lamps) {
             bool shaded = false;
             glm::vec3 toLamp = lamp->pos - hit.point;
@@ -195,7 +203,7 @@ traceRay(
             }
         }
         if (hit.mtl->reflectionFactor > EPS && depth < MAX_REFLECTION_DEPTH) {
-            retColor += traceRay(scene, hit.point, rayDir - 2.0f * hit.norm * glm::dot(rayDir, hit.norm), depth + 1) *
+            retColor += traceRay(scene, clExecutor, hit.point, rayDir - 2.0f * hit.norm * glm::dot(rayDir, hit.norm), depth + 1) *
                         hit.mtl->reflectionFactor;
         }
         return retColor;
@@ -208,26 +216,33 @@ traceRay(
 Hit
 computeClosestHit(
         const Scene &scene,
+        const std::shared_ptr<OpenClExecutor> clExecutor,
         const glm::vec3 &rayFrom,
         const glm::vec3 &rayDir
 ) {
     TriangleHit closestTriangleHit(false);
     std::shared_ptr<Triangle> closestTriangle;
-    for (auto &obj : scene.triangles) {
-        auto hit = computeTriangleHit(*obj, rayFrom, rayDir);
-        if (hit.isHit && hit.t > 0 && (!closestTriangleHit.isHit || hit.t < closestTriangleHit.t)) {
-            closestTriangleHit = hit;
-            closestTriangle = obj;
+    if (clExecutor.get() == nullptr) {
+        for (auto &obj : scene.triangles) {
+            auto hit = computeTriangleHit(*obj, rayFrom, rayDir);
+            if (hit.isHit && hit.t > 0 && (!closestTriangleHit.isHit || hit.t < closestTriangleHit.t)) {
+                closestTriangleHit = hit;
+                closestTriangle = obj;
+            }
         }
+    } else {
+
     }
 
     SphereHit closestSphereHit(false);
-    std::shared_ptr<Sphere> closestSphere;
-    for (auto &obj : scene.spheres) {
-        auto hit = computeSphereHit(*obj, rayFrom, rayDir);
-        if (hit.isHit && hit.t > 0 && (!closestSphereHit.isHit || hit.t < closestSphereHit.t)) {
-            closestSphereHit = hit;
-            closestSphere = obj;
+    if (clExecutor.get() == nullptr) {
+        std::shared_ptr<Sphere> closestSphere;
+        for (auto &obj : scene.spheres) {
+            auto hit = computeSphereHit(*obj, rayFrom, rayDir);
+            if (hit.isHit && hit.t > 0 && (!closestSphereHit.isHit || hit.t < closestSphereHit.t)) {
+                closestSphereHit = hit;
+                closestSphere = obj;
+            }
         }
     }
 
@@ -280,6 +295,7 @@ computeClosestHit(
 bool
 computeAnyHit(
         const Scene &scene,
+        const std::shared_ptr<OpenClExecutor> clExecutor,
         const glm::vec3 &rayFrom,
         const glm::vec3 &rayDir
 ) {
@@ -410,6 +426,7 @@ computePhongLight(
 float
 computeAmbientOcclusion(
         const Scene &scene,
+        const std::shared_ptr<OpenClExecutor> clExecutor,
         const glm::vec3 &pt,
         const glm::vec3 &norm,
         const glm::vec3 &rayDir
@@ -418,7 +435,15 @@ computeAmbientOcclusion(
     for (int i = 0; i < AO_RAYS_COUNT; i++) {
         glm::vec3 realNorm = glm::dot(rayDir, norm) < 0.0f ? norm : -norm;
         glm::vec3 randomRay = generateRandomRayInHalfSphere(realNorm);
-        if (!computeAnyHit(scene, pt, randomRay)) {
+
+        bool inShade;
+        if (clExecutor.get() != nullptr) {
+            inShade = computeAnyHitCl(scene, clExecutor, pt, randomRay);
+        } else {
+            inShade = computeAnyHit(scene, pt, randomRay);
+        }
+
+        if (!inShade) {
             retVal += scene.worldAmbientFactor;
         }
     }
@@ -466,7 +491,7 @@ loadScene(
         material->specularHardness = i["specularHardness"];
         material->reflectionFactor = i["reflectionFactor"];
         if (i["imagePath"] != nullptr) {
-            material->texImage = TexImage::createImage(i["imagePath"]);
+            material->texImage = tex_image::createImage(i["imagePath"]);
             material->texImage->setScaleX(i["scaleX"]);
             material->texImage->setScaleY(i["scaleY"]);
             material->textured = true;
@@ -517,7 +542,7 @@ loadScene(
         outScene.triangles.push_back(triangle);
     }
 
-    for (Json &i : inputJson["spheres"]) {
+    for (Json &i : inputJson["mSpheres"]) {
         int x = i["center"][0];
         int y = i["center"][1];
         int z = i["center"][2];
@@ -556,4 +581,14 @@ loadScene(
     );
     outScene.camPos = pos;
     outScene.camMat = mat;
+}
+
+bool computeAnyHitCl(const Scene &scene, const std::shared_ptr<OpenClExecutor> clExecutor, const glm::vec3 &rayFrom,
+                     const glm::vec3 &rayDir) {
+    return false;
+}
+
+Hit computeClosestHitCl(const Scene &scene, const std::shared_ptr<OpenClExecutor> clExecutor, const glm::vec3 &rayFrom,
+                        const glm::vec3 &rayDir) {
+    return Hit(false);
 }

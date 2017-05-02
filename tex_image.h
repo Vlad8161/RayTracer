@@ -10,7 +10,7 @@
 #include <glm/glm.hpp>
 #include "lib/lodepng.h"
 
-class TexImage {
+class tex_image {
 private:
     std::vector<unsigned char> mImageData;
     unsigned int mWidth;
@@ -19,11 +19,11 @@ private:
     float scaleY;
     bool initialized;
 
-    TexImage() {}
+    tex_image() {}
 
 public:
-    static std::shared_ptr<TexImage> createImage(const std::string& filename) {
-        std::shared_ptr<TexImage> retVal(new TexImage);
+    static std::shared_ptr<tex_image> createImage(const std::string& filename) {
+        std::shared_ptr<tex_image> retVal(new tex_image);
         if (lodepng::decode(retVal->mImageData, retVal->mWidth, retVal->mHeight, filename)) {
             retVal.reset();
         }
@@ -56,7 +56,7 @@ public:
     }
 
     void setScaleX(float scaleX) {
-        TexImage::scaleX = scaleX;
+        tex_image::scaleX = scaleX;
     }
 
     float getScaleY() const {
@@ -64,7 +64,7 @@ public:
     }
 
     void setScaleY(float scaleY) {
-        TexImage::scaleY = scaleY;
+        tex_image::scaleY = scaleY;
     }
 };
 

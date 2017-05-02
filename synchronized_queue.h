@@ -9,7 +9,7 @@
 #include <mutex>
 
 template<typename T>
-class SynchronizedQueue {
+class synchronized_queue {
 private:
     std::vector<T> mData;
     std::mutex mMutex;
