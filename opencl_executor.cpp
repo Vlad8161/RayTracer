@@ -37,11 +37,12 @@ OpenClExecutor::OpenClExecutor(const Scene &scene) {
     checkClResult(err, "clCreateCommandQueue");
 
     /* loading kernels */
-    std::ifstream ifstream("cl_kernels.cl");
+    std::ifstream ifstream("cl_kernels.c");
     std::string line;
     std::string progSource;
     while (std::getline(ifstream, line)) {
-        progSource += line += "\n";
+        progSource += line;
+        progSource += "\n";
     }
 
     cl_uint numProgs = 1;
@@ -81,7 +82,7 @@ OpenClExecutor::OpenClExecutor(const Scene &scene) {
         );
         checkClResult(err, "clCreateBuffer (triangles hit params)");
 
-        for (int i = 0; i < mTriangleCount; i++) {
+        for (size_t i = 0; i < mTriangleCount; i++) {
             putTriangle(*scene.triangles[i], mTriangles + (i * 12));
         }
 
@@ -91,6 +92,7 @@ OpenClExecutor::OpenClExecutor(const Scene &scene) {
                 mTriangles, 0, nullptr, nullptr
         );
         checkClResult(err, "clEnqueueWriteBuffer (triangles write)");
+
     }
 
     mSphereCount = scene.spheres.size();
@@ -114,7 +116,7 @@ OpenClExecutor::OpenClExecutor(const Scene &scene) {
         );
         checkClResult(err, "clCreateBuffer (spheres hit params)");
 
-        for (int i = 0; i < scene.spheres.size(); i++) {
+        for (size_t i = 0; i < scene.spheres.size(); i++) {
             putSphere(*scene.spheres[i], mSpheres + (i * 4));
         }
 
@@ -216,28 +218,39 @@ OpenClExecutor::~OpenClExecutor() {
     }
 }
 
-TriangleHit OpenClExecutor::computeClosestHitTriangle(const glm::vec3 &rayFrom, const glm::vec3 &rayDir) {
+std::tuple<TriangleHit, int> OpenClExecutor::computeClosestHitTriangle(const glm::vec3 &rayFrom, const glm::vec3 &rayDir) {
     cl_int err;
+
+    if (mTriangleCount == 0) {
+        return std::make_tuple(TriangleHit(false), 0);
+    }
 
     cl_float rayFromCl[3] = {rayFrom.x, rayFrom.y, rayFrom.z};
     err = clEnqueueWriteBuffer(
             mCommandQueue, mMemRayFrom, CL_TRUE, 0, sizeof(cl_float) * 3, rayFromCl, 0, nullptr, nullptr
     );
-    checkClResult(err, "clEnqueueWriteBuffer (closestHit rayFrom)");
+    checkClResult(err, "clEnqueueWriteBuffer (closestHit triangle rayFrom)");
 
     cl_float rayDirCl[3] = {rayDir.x, rayDir.y, rayDir.z};
     err = clEnqueueWriteBuffer(
             mCommandQueue, mMemRayDir, CL_TRUE, 0, sizeof(cl_float) * 3, rayDirCl, 0, nullptr, nullptr
     );
-    checkClResult(err, "clEnqueueWriteBuffer (closestHit rayDir)");
+    checkClResult(err, "clEnqueueWriteBuffer (closestHit triangle rayDir)");
 
     cl_uint triangleCount = (cl_uint) mTriangleCount;
-    clSetKernelArg(mKrnHitTriangle, 0, sizeof(cl_mem), &mMemTriangles);
-    clSetKernelArg(mKrnHitTriangle, 1, sizeof(cl_uint), &triangleCount);
-    clSetKernelArg(mKrnHitTriangle, 2, sizeof(cl_mem), &mMemRayFrom);
-    clSetKernelArg(mKrnHitTriangle, 3, sizeof(cl_mem), &mMemRayDir);
-    clSetKernelArg(mKrnHitTriangle, 4, sizeof(cl_mem), &mMemOutTrianglesHit);
-    clSetKernelArg(mKrnHitTriangle, 5, sizeof(cl_mem), &mMemOutTrianglesHitParams);
+    std::cout << triangleCount << std::endl;
+    err = clSetKernelArg(mKrnHitTriangle, 0, sizeof(cl_mem), &mMemTriangles);
+    std::cout << err << std::endl;
+    err = clSetKernelArg(mKrnHitTriangle, 1, sizeof(cl_uint), &triangleCount);
+    std::cout << err << std::endl;
+    err = clSetKernelArg(mKrnHitTriangle, 2, sizeof(cl_mem), &mMemRayFrom);
+    std::cout << err << std::endl;
+    err = clSetKernelArg(mKrnHitTriangle, 3, sizeof(cl_mem), &mMemRayDir);
+    std::cout << err << std::endl;
+    err = clSetKernelArg(mKrnHitTriangle, 4, sizeof(cl_mem), &mMemOutTrianglesHit);
+    std::cout << err << std::endl;
+    err = clSetKernelArg(mKrnHitTriangle, 5, sizeof(cl_mem), &mMemOutTrianglesHitParams);
+    std::cout << err << std::endl;
 
     err = clEnqueueNDRangeKernel(
             mCommandQueue, mKrnHitTriangle, 1, nullptr, &mTriangleCount, nullptr, 0, nullptr, nullptr
@@ -252,17 +265,18 @@ TriangleHit OpenClExecutor::computeClosestHitTriangle(const glm::vec3 &rayFrom, 
 
     err = clEnqueueReadBuffer(
             mCommandQueue, mMemOutTrianglesHitParams, CL_TRUE, 0,
-            sizeof(cl_char) * TRIANGLE_HIT_PARAM_SIZE * mTriangleCount, mOutTrianglesHitParams, 0, nullptr, nullptr
+            sizeof(cl_float) * TRIANGLE_HIT_PARAM_SIZE * mTriangleCount, mOutTrianglesHitParams, 0, nullptr, nullptr
     );
     checkClResult(err, "clEnqueueReadBuffer (closestHit triangles hit params)");
 
     bool retIsHit = false;
+    int retI = 0;
     float retT = 0.0f;
     float retU = 0.0f;
     float retV = 0.0f;
     glm::vec3 retPt;
     glm::vec3 retNorm;
-    for (int i = 0; i < mTriangleCount; i++) {
+    for (size_t i = 0; i < mTriangleCount; i++) {
         float* hitParams = mOutTrianglesHitParams + (i * TRIANGLE_HIT_PARAM_SIZE);
         float t = hitParams[0];
         if (mOutTrianglesHit[i] && (!retIsHit || t < retT)) {
@@ -276,13 +290,14 @@ TriangleHit OpenClExecutor::computeClosestHitTriangle(const glm::vec3 &rayFrom, 
             retNorm.x = hitParams[6];
             retNorm.y = hitParams[7];
             retNorm.z = hitParams[8];
+            retI = i;
         }
     }
 
     if (!retIsHit) {
-        return TriangleHit(false);
+        return std::make_tuple(TriangleHit(false), 0);
     } else {
-        return TriangleHit(true, retT, retU, retV, retPt, retNorm);
+        return std::make_tuple(TriangleHit(true, retT, retU, retV, retPt, retNorm), retI);
     }
 }
 
@@ -290,17 +305,21 @@ bool OpenClExecutor::computeAnyHitTriangle(const glm::vec3 &rayFrom, const glm::
     /* triangles */
     cl_int err;
 
+    if (mTriangleCount == 0) {
+        return false;
+    }
+
     cl_float rayFromCl[3] = {rayFrom.x, rayFrom.y, rayFrom.z};
     err = clEnqueueWriteBuffer(
             mCommandQueue, mMemRayFrom, CL_TRUE, 0, sizeof(cl_float) * 3, rayFromCl, 0, nullptr, nullptr
     );
-    checkClResult(err, "clEnqueueWriteBuffer (anyHit rayFrom)");
+    checkClResult(err, "clEnqueueWriteBuffer (anyHit triangle rayFrom)");
 
     cl_float rayDirCl[3] = {rayDir.x, rayDir.y, rayDir.z};
     err = clEnqueueWriteBuffer(
             mCommandQueue, mMemRayDir, CL_TRUE, 0, sizeof(cl_float) * 3, rayDirCl, 0, nullptr, nullptr
     );
-    checkClResult(err, "clEnqueueWriteBuffer (anyHit rayDir)");
+    checkClResult(err, "clEnqueueWriteBuffer (anyHit triangle rayDir)");
 
     cl_uint triangleCount = (cl_uint) mTriangleCount;
     clSetKernelArg(mKrnHitTriangle, 0, sizeof(cl_mem), &mMemTriangles);
@@ -321,8 +340,8 @@ bool OpenClExecutor::computeAnyHitTriangle(const glm::vec3 &rayFrom, const glm::
     );
     checkClResult(err, "clEnqueueReadBuffer (anyHit triangles hit)");
 
-    for (int i = 0; i < mTriangleCount; i++) {
-        if (mOutTrianglesHit) {
+    for (size_t i = 0; i < mTriangleCount; i++) {
+        if (mOutTrianglesHit[i]) {
             return true;
         }
     }
@@ -330,8 +349,12 @@ bool OpenClExecutor::computeAnyHitTriangle(const glm::vec3 &rayFrom, const glm::
     return false;
 }
 
-SphereHit OpenClExecutor::computeClosestHitSphere(const glm::vec3 &rayFrom, const glm::vec3 &rayDir) {
+std::tuple<SphereHit, int> OpenClExecutor::computeClosestHitSphere(const glm::vec3 &rayFrom, const glm::vec3 &rayDir) {
     cl_int err;
+
+    if (mSphereCount == 0) {
+        return std::make_tuple(SphereHit(false), 0);
+    }
 
     cl_float rayFromCl[3] = {rayFrom.x, rayFrom.y, rayFrom.z};
     err = clEnqueueWriteBuffer(
@@ -366,38 +389,44 @@ SphereHit OpenClExecutor::computeClosestHitSphere(const glm::vec3 &rayFrom, cons
 
     err = clEnqueueReadBuffer(
             mCommandQueue, mMemOutSpheresHitParams, CL_TRUE, 0,
-            sizeof(cl_char) * SPHERE_HIT_PARAM_SIZE * mSphereCount, mOutSpheresHitParams, 0, nullptr, nullptr
+            sizeof(cl_float) * SPHERE_HIT_PARAM_SIZE * mSphereCount, mOutSpheresHitParams, 0, nullptr, nullptr
     );
     checkClResult(err, "clEnqueueReadBuffer (closestHit spheres hit params)");
 
     bool retIsHit = false;
+    int retI = 0;
     float retT = 0.0f;
     glm::vec3 retPt;
     glm::vec3 retNorm;
-    for (int i = 0; i < mSphereCount; i++) {
+    for (size_t i = 0; i < mSphereCount; i++) {
         float* hitParams = mOutSpheresHitParams + (i * SPHERE_HIT_PARAM_SIZE);
         float t = hitParams[0];
         if (mOutSpheresHit[i] && (!retIsHit || t < retT)) {
             retIsHit = true;
+            retI = i;
             retT = t;
-            retPt.x = hitParams[3];
-            retPt.y = hitParams[4];
-            retPt.z = hitParams[5];
-            retNorm.x = hitParams[6];
-            retNorm.y = hitParams[7];
-            retNorm.z = hitParams[8];
+            retPt.x = hitParams[1];
+            retPt.y = hitParams[2];
+            retPt.z = hitParams[3];
+            retNorm.x = hitParams[4];
+            retNorm.y = hitParams[5];
+            retNorm.z = hitParams[6];
         }
     }
 
     if (!retIsHit) {
-        return SphereHit(false);
+        return std::tuple<SphereHit, int>(SphereHit(false), 0);
     } else {
-        return SphereHit(true, retT, retPt, retNorm);
+        return std::tuple<SphereHit, int>(SphereHit(true, retT, retPt, retNorm), retI);
     }
 }
 
 bool OpenClExecutor::computeAnyHitSphere(const glm::vec3 &rayFrom, const glm::vec3 &rayDir) {
     cl_int err;
+
+    if (mSphereCount == 0) {
+        return false;
+    }
 
     cl_float rayFromCl[3] = {rayFrom.x, rayFrom.y, rayFrom.z};
     err = clEnqueueWriteBuffer(
@@ -430,7 +459,7 @@ bool OpenClExecutor::computeAnyHitSphere(const glm::vec3 &rayFrom, const glm::ve
     );
     checkClResult(err, "clEnqueueReadBuffer (anyHit spheres hit)");
 
-    for (int i = 0; i < mSphereCount; i++) {
+    for (size_t i = 0; i < mSphereCount; i++) {
         if (mOutSpheresHit[i]) {
             return true;
         }

@@ -45,9 +45,9 @@ public:
 
     ~OpenClExecutor();
 
-    TriangleHit computeClosestHitTriangle(const glm::vec3 &rayFrom, const glm::vec3 &rayDir);
+    std::tuple<TriangleHit, int> computeClosestHitTriangle(const glm::vec3 &rayFrom, const glm::vec3 &rayDir);
 
-    SphereHit computeClosestHitSphere(const glm::vec3 &rayFrom, const glm::vec3 &rayDir);
+    std::tuple<SphereHit, int> computeClosestHitSphere(const glm::vec3 &rayFrom, const glm::vec3 &rayDir);
 
     bool computeAnyHitTriangle(const glm::vec3 &rayFrom, const glm::vec3 &rayDir);
 
@@ -56,7 +56,7 @@ public:
 private:
     void checkClResult(cl_int err, const char *msg) {
         if (err != CL_SUCCESS) {
-            std::cerr << msg << ": " << std::endl;
+            std::cerr << msg << ": " << err << std::endl;
             throw std::runtime_error("OpenCl function failed");
         }
     }

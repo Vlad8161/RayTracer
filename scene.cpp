@@ -6,10 +6,7 @@
 #include <thread>
 #include "scene.h"
 #include "lib/json.h"
-
-#define AO_RAYS_COUNT (30)
-#define MAX_REFLECTION_DEPTH (2)
-
+#include "opencl_executor.h"
 
 using Json = nlohmann::json;
 
@@ -53,7 +50,8 @@ renderScene(
             auto traceColor = traceRay(scene, clExecutor, scene.camPos, glm::normalize(rayWorldDir), 0);
             traceColor += traceRay(scene, clExecutor, scene.camPos, glm::normalize(rayWorldDir + rayWorldDx), 0);
             traceColor += traceRay(scene, clExecutor, scene.camPos, glm::normalize(rayWorldDir + rayWorldDy), 0);
-            traceColor += traceRay(scene, clExecutor, scene.camPos, glm::normalize(rayWorldDir + rayWorldDx + rayWorldDy), 0);
+            traceColor += traceRay(scene, clExecutor, scene.camPos,
+                                   glm::normalize(rayWorldDir + rayWorldDx + rayWorldDy), 0);
             traceColor /= 4.0f;
             outImg.setPixel(j, i,
                             powf(traceColor.r / 2.2f, 0.3f),
@@ -172,16 +170,17 @@ traceRay(
         const glm::vec3 &rayDir,
         uint32_t depth
 ) {
-    Hit hit(false);
-    if (clExecutor.get() != nullptr) {
-        hit = computeClosestHitCl(scene, clExecutor, rayFrom, rayDir);
-    } else {
-        hit = computeClosestHit(scene, rayFrom, rayDir);
-    }
+    auto start = std::chrono::high_resolution_clock::now();
+    Hit hit = computeClosestHit(scene, clExecutor, rayFrom, rayDir);
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
+    //std::cout << duration << std::endl;
 
     if (hit.isHit) {
-        glm::vec3 retColor =
-                scene.worldAmbientColor + hit.color * computeAmbientOcclusion(scene, clExecutor, hit.point, hit.norm, rayDir);
+        glm::vec3 retColor = scene.worldAmbientColor;
+#ifdef ENABLE_AO
+        retColor += hit.color * computeAmbientOcclusion(scene, clExecutor, hit.point, hit.norm, rayDir);
+#endif
         for (auto &lamp : scene.lamps) {
             bool shaded = false;
             glm::vec3 toLamp = lamp->pos - hit.point;
@@ -193,7 +192,7 @@ traceRay(
             }
 
             if (!shaded) {
-                shaded |= computeAnyHit(scene, hit.point, toLamp);
+                shaded |= computeAnyHit(scene, clExecutor, hit.point, toLamp);
             }
 
             if (!shaded) {
@@ -202,10 +201,13 @@ traceRay(
                             computePhongLight(*lamp, toLamp, hit.norm, rayDir, hit.mtl->specularHardness);
             }
         }
+#ifdef ENABLE_REFLECTION
         if (hit.mtl->reflectionFactor > EPS && depth < MAX_REFLECTION_DEPTH) {
-            retColor += traceRay(scene, clExecutor, hit.point, rayDir - 2.0f * hit.norm * glm::dot(rayDir, hit.norm), depth + 1) *
+            retColor += traceRay(scene, clExecutor, hit.point, rayDir - 2.0f * hit.norm * glm::dot(rayDir, hit.norm),
+                                 depth + 1) *
                         hit.mtl->reflectionFactor;
         }
+#endif
         return retColor;
     } else {
         return scene.worldHorizonColor;
@@ -231,18 +233,28 @@ computeClosestHit(
             }
         }
     } else {
-
+        auto hit = clExecutor->computeClosestHitTriangle(rayFrom, rayDir);
+        closestTriangleHit = std::get<0>(hit);
+        if (closestTriangleHit.isHit) {
+            closestTriangle = scene.triangles[std::get<1>(hit)];
+        }
     }
 
     SphereHit closestSphereHit(false);
+    std::shared_ptr<Sphere> closestSphere;
     if (clExecutor.get() == nullptr) {
-        std::shared_ptr<Sphere> closestSphere;
         for (auto &obj : scene.spheres) {
             auto hit = computeSphereHit(*obj, rayFrom, rayDir);
             if (hit.isHit && hit.t > 0 && (!closestSphereHit.isHit || hit.t < closestSphereHit.t)) {
                 closestSphereHit = hit;
                 closestSphere = obj;
             }
+        }
+    } else {
+        auto hit = clExecutor->computeClosestHitSphere(rayFrom, rayDir);
+        closestSphereHit = std::get<0>(hit);
+        if (closestSphereHit.isHit) {
+            closestSphere = scene.spheres[std::get<1>(hit)];
         }
     }
 
@@ -299,16 +311,30 @@ computeAnyHit(
         const glm::vec3 &rayFrom,
         const glm::vec3 &rayDir
 ) {
-    for (auto &obj : scene.triangles) {
-        auto hit = computeTriangleHit(*obj, rayFrom, rayDir);
-        if (hit.isHit) {
+    if (clExecutor.get() == nullptr) {
+        for (auto &obj : scene.triangles) {
+            auto hit = computeTriangleHit(*obj, rayFrom, rayDir);
+            if (hit.isHit) {
+                return true;
+            }
+        }
+    } else {
+        bool hit = clExecutor->computeAnyHitTriangle(rayFrom, rayDir);
+        if (hit) {
             return true;
         }
     }
 
-    for (auto &obj : scene.spheres) {
-        auto hit = computeSphereHit(*obj, rayFrom, rayDir);
-        if (hit.isHit) {
+    if (clExecutor.get() == nullptr) {
+        for (auto &obj : scene.spheres) {
+            auto hit = computeSphereHit(*obj, rayFrom, rayDir);
+            if (hit.isHit) {
+                return true;
+            }
+        }
+    } else {
+        bool hit = clExecutor->computeAnyHitSphere(rayFrom, rayDir);
+        if (hit) {
             return true;
         }
     }
@@ -436,12 +462,7 @@ computeAmbientOcclusion(
         glm::vec3 realNorm = glm::dot(rayDir, norm) < 0.0f ? norm : -norm;
         glm::vec3 randomRay = generateRandomRayInHalfSphere(realNorm);
 
-        bool inShade;
-        if (clExecutor.get() != nullptr) {
-            inShade = computeAnyHitCl(scene, clExecutor, pt, randomRay);
-        } else {
-            inShade = computeAnyHit(scene, pt, randomRay);
-        }
+        bool inShade = computeAnyHit(scene, clExecutor, pt, randomRay);
 
         if (!inShade) {
             retVal += scene.worldAmbientFactor;
@@ -542,7 +563,7 @@ loadScene(
         outScene.triangles.push_back(triangle);
     }
 
-    for (Json &i : inputJson["mSpheres"]) {
+    for (Json &i : inputJson["spheres"]) {
         int x = i["center"][0];
         int y = i["center"][1];
         int z = i["center"][2];
@@ -581,14 +602,4 @@ loadScene(
     );
     outScene.camPos = pos;
     outScene.camMat = mat;
-}
-
-bool computeAnyHitCl(const Scene &scene, const std::shared_ptr<OpenClExecutor> clExecutor, const glm::vec3 &rayFrom,
-                     const glm::vec3 &rayDir) {
-    return false;
-}
-
-Hit computeClosestHitCl(const Scene &scene, const std::shared_ptr<OpenClExecutor> clExecutor, const glm::vec3 &rayFrom,
-                        const glm::vec3 &rayDir) {
-    return Hit(false);
 }

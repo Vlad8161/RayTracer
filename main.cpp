@@ -11,6 +11,7 @@
 #include "synchronized_queue.h"
 #include "scene.h"
 #include "lib/json.h"
+#include "opencl_executor.h"
 
 void render(const image_bitmap &img);
 

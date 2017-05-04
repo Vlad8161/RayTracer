@@ -213,14 +213,6 @@ traceRay(
 Hit
 computeClosestHit(
         const Scene &scene,
-        const glm::vec3 &rayFrom,
-        const glm::vec3 &rayDir
-);
-
-
-Hit
-computeClosestHitCl(
-        const Scene &scene,
         const std::shared_ptr<OpenClExecutor> clExecutor,
         const glm::vec3 &rayFrom,
         const glm::vec3 &rayDir
@@ -229,14 +221,6 @@ computeClosestHitCl(
 
 bool
 computeAnyHit(
-        const Scene &scene,
-        const glm::vec3 &rayFrom,
-        const glm::vec3 &rayDir
-);
-
-
-bool
-computeAnyHitCl(
         const Scene &scene,
         const std::shared_ptr<OpenClExecutor> clExecutor,
         const glm::vec3 &rayFrom,
