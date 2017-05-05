@@ -153,6 +153,16 @@ typedef struct _Scene {
 } Scene;
 
 
+typedef struct _RayData {
+    float p_x;
+    float p_y;
+    float p_z;
+    float d_x;
+    float d_y;
+    float d_z;
+} RayData;
+
+
 void
 loadScene(
         Scene &outScene,

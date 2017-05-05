@@ -14,6 +14,7 @@ class OpenClExecutor {
     const size_t TRIANGLE_HIT_PARAM_SIZE = 9;
     const size_t SPHERE_SIZE = 4;
     const size_t SPHERE_HIT_PARAM_SIZE = 7;
+    const size_t RAY_SIZE = 6;
 
     cl_context mContext;
     cl_command_queue mCommandQueue;
@@ -21,37 +22,42 @@ class OpenClExecutor {
 
     cl_kernel mKrnHitTriangle;
     size_t mTriangleCount;
-    cl_mem mMemTriangles;
-    cl_mem mMemOutTrianglesHit;
-    cl_mem mMemOutTrianglesHitParams;
     cl_float *mTriangles;
-    cl_char *mOutTrianglesHit;
-    cl_float *mOutTrianglesHitParams;
+    cl_mem mMemTriangles;
 
     cl_kernel mKrnHitSphere;
     size_t mSphereCount;
-    cl_mem mMemSpheres;
-    cl_mem mMemOutSpheresHit;
-    cl_mem mMemOutSpheresHitParams;
     cl_float *mSpheres;
-    cl_char *mOutSpheresHit;
-    cl_float *mOutSpheresHitParams;
-
-    cl_mem mMemRayFrom;
-    cl_mem mMemRayDir;
+    cl_mem mMemSpheres;
 
 public:
     OpenClExecutor(const Scene &scene);
 
     ~OpenClExecutor();
 
-    std::tuple<TriangleHit, int> computeClosestHitTriangle(const glm::vec3 &rayFrom, const glm::vec3 &rayDir);
+    void
+    computeClosestHitTriangle(
+            std::vector<cl_float>& rays,
+            std::vector<std::tuple<TriangleHit, size_t, glm::vec3, glm::vec3>>& resHits
+    );
 
-    std::tuple<SphereHit, int> computeClosestHitSphere(const glm::vec3 &rayFrom, const glm::vec3 &rayDir);
+    void
+    computeClosestHitSphere(
+            std::vector<cl_float>& rays,
+            std::vector<std::tuple<SphereHit, size_t, glm::vec3, glm::vec3>>& resHits
+    );
 
-    bool computeAnyHitTriangle(const glm::vec3 &rayFrom, const glm::vec3 &rayDir);
+    void
+    computeAnyHitTriangle(
+            std::vector<cl_float> &rays,
+            std::vector<bool> &resHits
+    );
 
-    bool computeAnyHitSphere(const glm::vec3 &rayFrom, const glm::vec3 &rayDir);
+    void
+    computeAnyHitSphere(
+            std::vector<cl_float> &rays,
+            std::vector<bool> &resHits
+    );
 
 private:
     void checkClResult(cl_int err, const char *msg) {

@@ -16,13 +16,21 @@
     - float v
     - vec3 hitPt
     - vec3 norm
+
+  struct Ray
+    - p_x
+    - p_y
+    - p_z
+    - d_x
+    - d_y
+    - d_z
 */
 __kernel void
 triangleHit(
-    const __constant float* triangles,
+    const __global float* triangles,
     const unsigned int triangleCount,
-    const __global float* rayFromVec,
-    const __global float* rayDirVec,
+    const __global float* raysVec,
+    const unsigned int raysCount,
     __global char* retHits,
     __global float* retHitParams
 );
@@ -37,13 +45,21 @@ triangleHit(
     - float t
     - vec3 hitPt
     - vec3 norm
+
+  struct Ray
+    - p_x
+    - p_y
+    - p_z
+    - d_x
+    - d_y
+    - d_z
 */
 __kernel void
 sphereHit(
-    const __constant float* mSpheres,
+    const __global float* mSpheres,
     const unsigned int sphereCount,
-    const __global float* rayFromVec,
-    const __global float* rayDirVec,
+    const __global float* raysVec,
+    const unsigned int raysCount,
     __global char* retHit,
     __global float* retHitParams
 );
@@ -62,13 +78,21 @@ sphereHit(
     - float v
     - vec3 hitPt
     - vec3 norm
+
+  struct Ray
+    - p_x
+    - p_y
+    - p_z
+    - d_x
+    - d_y
+    - d_z
 */
 __kernel void
 triangleHit(
-    const __constant float* triangles,
+    const __global float* triangles,
     const unsigned int triangleCount,
-    const __global float* rayFromVec,
-    const __global float* rayDirVec,
+    const __global float* raysVec,
+    const unsigned int raysCount,
     __global char* retHits,
     __global float* retHitParams
 ) {
@@ -80,7 +104,7 @@ triangleHit(
 
     float3 rayFrom = vload3(0, rayFromVec);
     float3 rayDir = vload3(0, rayDirVec);
-    __constant float *triangle = triangles + (id * 12);
+    __global float *triangle = triangles + (id * 12);
     float3 p = vload3(0, triangle);
     float3 e1 = vload3(1, triangle);
     float3 e2 = vload3(2, triangle);
@@ -144,13 +168,21 @@ triangleHit(
     - float t
     - vec3 hitPt
     - vec3 norm
+
+  struct Ray
+    - p_x
+    - p_y
+    - p_z
+    - d_x
+    - d_y
+    - d_z
 */
 __kernel void
 sphereHit(
-    const __constant float* mSpheres,
+    const __global float* mSpheres,
     const unsigned int sphereCount,
-    const __global float* rayFromVec,
-    const __global float* rayDirVec,
+    const __global float* raysVec,
+    const unsigned int raysCount,
     __global char* retHit,
     __global float* retHitParams
 ) {
@@ -163,7 +195,7 @@ sphereHit(
     float3 rayFrom = vload3(0, rayFromVec);
     float3 rayDir = vload3(0, rayDirVec);
 
-    __constant float* sphere = mSpheres + (id * 4);
+    __global float* sphere = mSpheres + (id * 4);
     float3 center = vload3(0, sphere);
     float radius = sphere[3];
 

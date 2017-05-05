@@ -170,11 +170,7 @@ traceRay(
         const glm::vec3 &rayDir,
         uint32_t depth
 ) {
-    auto start = std::chrono::high_resolution_clock::now();
     Hit hit = computeClosestHit(scene, clExecutor, rayFrom, rayDir);
-    auto end = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
-    //std::cout << duration << std::endl;
 
     if (hit.isHit) {
         glm::vec3 retColor = scene.worldAmbientColor;
