@@ -37,26 +37,30 @@ public:
 
     void
     computeClosestHitTriangle(
-            std::vector<cl_float>& rays,
-            std::vector<std::tuple<TriangleHit, size_t, glm::vec3, glm::vec3>>& resHits
+            const cl_float *rays,
+            cl_uint rayCount,
+            std::vector<std::tuple<TriangleHit, size_t>> &resHits
     );
 
     void
     computeClosestHitSphere(
-            std::vector<cl_float>& rays,
-            std::vector<std::tuple<SphereHit, size_t, glm::vec3, glm::vec3>>& resHits
+            const cl_float *rays,
+            cl_uint rayCount,
+            std::vector<std::tuple<SphereHit, size_t>> &resHits
     );
 
     void
     computeAnyHitTriangle(
-            std::vector<cl_float> &rays,
-            std::vector<bool> &resHits
+            const cl_float *rays,
+            cl_uint rayCount,
+            cl_char* resHits
     );
 
     void
     computeAnyHitSphere(
-            std::vector<cl_float> &rays,
-            std::vector<bool> &resHits
+            const cl_float *rays,
+            cl_uint rayCount,
+            cl_char* resHits
     );
 
 private:
@@ -86,7 +90,7 @@ private:
         dst[0] = sphere.center.x;
         dst[1] = sphere.center.y;
         dst[2] = sphere.center.z;
-        dst[4] = sphere.radius;
+        dst[3] = sphere.radius;
     }
 };
 

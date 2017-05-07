@@ -97,13 +97,14 @@ triangleHit(
     __global float* retHitParams
 ) {
     unsigned int id = get_global_id(0);
+    unsigned int iRay = get_global_id(1);
 
-    if (id >= triangleCount) {
+    if (id >= triangleCount || iRay >= raysCount) {
         return;
     }
 
-    float3 rayFrom = vload3(0, rayFromVec);
-    float3 rayDir = vload3(0, rayDirVec);
+    float3 rayFrom = vload3(iRay * 2, raysVec);
+    float3 rayDir = vload3(iRay * 2 + 1, raysVec);
     __global float *triangle = triangles + (id * 12);
     float3 p = vload3(0, triangle);
     float3 e1 = vload3(1, triangle);
@@ -141,12 +142,12 @@ triangleHit(
     float v = detv / det;
     float3 hitPt = rayFrom + t * rayDir;
 
-    char retHit = (det > 0.001f && det < -0.001f);
+    char retHit = (det > 0.001f || det < -0.001f);
     retHit = retHit && (t > 0.001f);
     retHit = retHit && (u > 0.0f && v > 0.0f && u + v < 1.0f);
 
-    retHits[id] = retHit;
-    __global float* retHitParam = retHitParams + (id * 9);
+    retHits[iRay * triangleCount + id] = retHit;
+    __global float* retHitParam = retHitParams + (iRay * 9 * triangleCount) + (id * 9);
     retHitParam[0] = t;
     retHitParam[1] = u;
     retHitParam[2] = v;
@@ -187,13 +188,14 @@ sphereHit(
     __global float* retHitParams
 ) {
     unsigned int id = get_global_id(0);
+    unsigned int iRay = get_global_id(1);
 
-    if (id >= sphereCount) {
+    if (id >= sphereCount || iRay >= raysCount) {
         return;
     }
 
-    float3 rayFrom = vload3(0, rayFromVec);
-    float3 rayDir = vload3(0, rayDirVec);
+    float3 rayFrom = vload3(iRay * 2, raysVec);
+    float3 rayDir = vload3(iRay * 2 + 1, raysVec);
 
     __global float* sphere = mSpheres + (id * 4);
     float3 center = vload3(0, sphere);
@@ -202,38 +204,38 @@ sphereHit(
     float3 v = rayFrom - center;
     float a = dot(rayDir, rayDir);
     float b = 2 * dot(v, rayDir);
-    float c = dot(v, v) - radius * radius;
-    float d = b * b - 4 * a * c;
+    float c = dot(v, v) - (radius * radius);
+    float d = (b * b) - (4 * a * c);
 
     float t = 0.0f;
-    retHit[id] = 0;
-    if (d < 0) {
+    retHit[iRay * sphereCount + id] = 0;
+    if (d < 0.0f) {
         return;
-    } else if (d < 0.001 && d > -0.001) {
-        t = -b / 2 * a;
-        if (t < 0.001) {
+    } else if (d < 0.0001f && d > -0.000f) {
+        t = -b / 2.0f * a;
+        if (t < 0.0f) {
             return;
         }
     } else {
         float sqrtD = sqrt(d);
-        float t1 = (-b + sqrtD) / (2 * a);
-        float t2 = (-b - sqrtD) / (2 * a);
-        if (t1 > 0.001 && t2 > 0.001) {
+        float t1 = (-b + sqrtD) / (2.0f * a);
+        float t2 = (-b - sqrtD) / (2.0f * a);
+        if (t1 > 0.0001f && t2 > 0.0001f) {
             t = t1 < t2 ? t1 : t2;
-        } else if (t1 > 0.001) {
+        } else if (t1 > 0.0001f) {
             t = t1;
-        } else if (t2 > 0.001) {
+        } else if (t2 > 0.0001f) {
             t = t2;
         } else {
             return;
         }
     }
 
-    retHit[id] = 1;
+    retHit[iRay * sphereCount + id] = 1;
     float3 hitPt = rayFrom + t * rayDir;
     float3 norm = (hitPt - center) / radius;
 
-    __global float* retHitParam = retHitParams + (id * 7);
+    __global float* retHitParam = retHitParams + (iRay * 7 * sphereCount) + (id * 7);
     retHitParam[0] = t;
     retHitParam[1] = hitPt.x;
     retHitParam[2] = hitPt.y;
@@ -241,7 +243,5 @@ sphereHit(
     retHitParam[4] = norm.x;
     retHitParam[5] = norm.y;
     retHitParam[6] = norm.z;
-/*
-    */
 }
 

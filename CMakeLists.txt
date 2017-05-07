@@ -21,11 +21,13 @@ set(SOURCE_FILES
         lib/lodepng.cpp
         scene.h
         scene.cpp
+        ray_tracer.h
+        ray_tracer.cpp
         opencl_executor.h
         opencl_executor.cpp
         image_bitmap.h
         main.cpp
-        tex_image.h synchronized_queue.h config.h)
+        tex_image.h synchronized_queue.h config.h ray_tracer_cl.cpp ray_tracer_cl.h)
 add_executable(ray_tracing ${SOURCE_FILES})
 
 target_include_directories(ray_tracing PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

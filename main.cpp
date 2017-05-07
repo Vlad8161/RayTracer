@@ -9,9 +9,9 @@
 
 #include "image_bitmap.h"
 #include "synchronized_queue.h"
-#include "scene.h"
+#include "ray_tracer.h"
+#include "ray_tracer_cl.h"
 #include "lib/json.h"
-#include "opencl_executor.h"
 
 void render(const image_bitmap &img);
 
@@ -90,14 +90,13 @@ int main() {
     }
 #else
     std::vector<long> durations;
-#ifdef GPU_ACCELERATION
-    std::shared_ptr<OpenClExecutor> clExecutor(new OpenClExecutor(*scene));
-#else
-    std::shared_ptr<OpenClExecutor> clExecutor(nullptr);
-#endif
     for (int i = 0; i < RENDER_COUNT; i++) {
         auto start = std::chrono::high_resolution_clock::now();
-        renderScene(*img, *scene, clExecutor);
+#ifdef GPU_ACCELERATION
+        renderSceneCl(*img, *scene);
+#else
+        renderScene(*img, *scene);
+#endif
         auto end = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
         durations.push_back(duration);
